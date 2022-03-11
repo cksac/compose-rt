@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
-use compose_rt::Composer;
-use std::{cell::RefCell, fmt::Debug};
+use compose_rt::{Composer, Data};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
@@ -9,24 +9,44 @@ use std::{cell::RefCell, fmt::Debug};
 pub trait RenderObject: Debug {}
 
 #[derive(Debug)]
-pub struct RenderColumn {}
+pub struct RenderFlex {
+    children: Vec<Rc<RefCell<dyn RenderObject>>>,
+}
+impl RenderFlex {
+    pub fn new() -> Self {
+        RenderFlex {
+            children: Vec::new(),
+        }
+    }
+}
 
-impl RenderObject for RenderColumn {}
+impl RenderObject for RenderFlex {}
 
 #[derive(Debug)]
-pub struct RenderText(String);
-impl RenderObject for RenderText {}
+pub struct RenderLabel(String);
+impl RenderObject for RenderLabel {}
 
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
+
 fn Column<C>(cx: &mut Composer, content: C)
 where
     C: Fn(&mut Composer),
 {
     cx.group(
-        |_| RefCell::new(RenderColumn {}),
+        |_| RefCell::new(RenderFlex::new()),
         |cx| content(cx),
+        |node: Rc<RefCell<RenderFlex>>, children: Vec<Rc<dyn Data>>| {
+            let mut flex = node.borrow_mut();
+            flex.children.clear();
+            for child in children {
+                // TODO: <dyn Data> to other trait object
+                if let Ok(t) = child.downcast_rc::<RefCell<RenderLabel>>() {
+                    flex.children.push(t);
+                }
+            }
+        },
         |_| false,
         |_| {},
     );
@@ -35,8 +55,9 @@ where
 fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let t = text.as_ref();
     cx.group(
-        |_| RefCell::new(RenderText(t.to_string())),
+        |_| RefCell::new(RenderLabel(t.to_string())),
         |_| {},
+        |_, _| {},
         |n| n.borrow().0 == t,
         |n| {
             n.borrow_mut().0 = t.to_string();
