@@ -38,13 +38,7 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn group<N, C, S, U, Node>(
-        &mut self,
-        factory: N,
-        content: C,
-        skip: S,
-        update: U,
-    ) -> Rc<Node>
+    pub fn group<N, C, S, U, Node>(&mut self, factory: N, content: C, skip: S, update: U)
     where
         N: FnOnce(&mut Composer) -> Node,
         C: FnOnce(&mut Composer),
@@ -76,41 +70,53 @@ impl Composer {
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
                 if let Ok(node) = p_data.downcast_rc::<Node>() {
-                    trace!("{} - get cached {:?}", cursor, node);
-                    if !skip(node.clone()) {
+                    trace!("{: >15} {} - {:?} - {:?}", "get_cached", cursor, slot_id, node);
+                    if skip(node.clone()) {
+                        self.skip_group(cursor, p_size);
+                    } else {
                         content(self);
                         update(node.clone());
-                        self.end_group(cursor, slot_id, node.clone());
+                        self.end_update(cursor);                       
                     }
-                    return node;
+                    return;
                 }
             }
-
             // move previous cached slot to recycle bin
             self.recycle_slot(cursor, p_slot_id, p_size);
-        }
+        } 
 
         self.begin_group(cursor, slot_id);
         let node = Rc::new(factory(self));
         content(self);
-        self.end_group(cursor, slot_id, node.clone());
-
-        node
+        self.end_group(cursor, node);      
     }
 
-    fn begin_group(&mut self, cursor: usize, slot_id: SlotId) {
-        trace!("{} - group begin {:?}", cursor, slot_id);
-        let slot = Slot::placeholder(slot_id);
+    fn begin_group(&mut self, cursor: usize, slot_id: SlotId) {        
+        let slot =Slot::placeholder(slot_id);
         self.tape.insert(cursor, slot);
+        trace!("{: >15} {} - {:?}", "begin_group", cursor, slot_id);
     }
 
-    fn end_group(&mut self, cursor: usize, slot_id: SlotId, data: Rc<dyn Data>) {
-        trace!("{} - group end   {:?} {:?}", cursor, slot_id, data);
+    fn end_group(&mut self, cursor: usize, data: Rc<dyn Data>) {
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {
             slot.data = data;
             slot.size = curr_cursor - cursor;
+            trace!("{: >15} {} - {:?} - {:?}", "end_group", cursor, slot.id, slot.data);
         }
+    }
+
+    fn end_update(&mut self, cursor: usize) {
+        let curr_cursor = self.current_cursor();
+        if let Some(slot) = self.tape.get_mut(cursor) {
+            slot.size = curr_cursor - cursor;
+            trace!("{: >15} {} - {:?}", "end_update", cursor, slot.id);
+        }
+    }
+
+    fn skip_group(&mut self, cursor: usize, size: usize) {
+        trace!("{: >15} {} - {} - {}", "skip_group", cursor, size, self.cursor);        
+        self.cursor = cursor + size;
     }
 
     #[inline]

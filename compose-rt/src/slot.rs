@@ -94,12 +94,12 @@ impl Debug for SlotId {
         if f.alternate() {
             match self.key {
                 Some(key) => f.write_fmt(format_args!("{:#?} |{}", self.call_id, key)),
-                None => f.write_fmt(format_args!("{:#?}", self.call_id)),
+                None => f.write_fmt(format_args!("{:#?} |*", self.call_id)),
             }
         } else {
             match self.key {
                 Some(key) => f.write_fmt(format_args!("{:?} |{}", self.call_id, key)),
-                None => f.write_fmt(format_args!("{:?}", self.call_id)),
+                None => f.write_fmt(format_args!("{:?} |*", self.call_id)),
             }
         }
     }
