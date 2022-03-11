@@ -20,23 +20,23 @@ impl RenderObject for RenderText {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
-fn Column<C>(cx: &Composer, content: C)
+fn Column<C>(cx: &mut Composer, content: C)
 where
-    C: Fn(),
+    C: Fn(&mut Composer),
 {
     cx.group(
-        || RefCell::new(RenderColumn {}),
-        || content(),
+        |_| RefCell::new(RenderColumn {}),
+        |cx| content(cx),
         |_| false,
         |_| {},
     );
 }
 
-fn Text(cx: &Composer, text: impl AsRef<str>) {
+fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let t = text.as_ref();
     cx.group(
-        || RefCell::new(RenderText(t.to_string())),
-        || {},
+        |_| RefCell::new(RenderText(t.to_string())),
+        |_| {},
         |n| n.borrow().0 == t,
         |n| {
             n.borrow_mut().0 = t.to_string();
@@ -60,17 +60,17 @@ impl Movie {
     }
 }
 
-fn MoviesScreen(cx: &Composer, movies: Vec<Movie>) {
-    Column(cx, || {
+fn MoviesScreen(cx: &mut Composer, movies: Vec<Movie>) {
+    Column(cx, |cx| {
         for movie in &movies {
-            cx.tag(movie.id, || MovieOverview(cx, &movie))
+            cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
         }
     })
 }
 
-fn MovieOverview(cx: &Composer, movie: &Movie) {
+fn MovieOverview(cx: &mut Composer, movie: &Movie) {
     Text(cx, &movie.name);
-    // Column(cx, || {
+    // Column(cx, |cx| {
     //     Text(cx, "name");
 
     //     //let count = cx.slot(|| 0usize);
@@ -84,14 +84,13 @@ fn main() {
         .filter_level(log::LevelFilter::Trace)
         .init();
 
-    let cx = Composer::new(10);
+    let ref mut cx = Composer::new(10);
     let movies = vec![Movie::new(1, "A"), Movie::new(2, "B")];
-    MoviesScreen(&cx, movies);
+    MoviesScreen(cx, movies);
     println!("{:#?}", cx);
+    cx.finalize();
 
-    // TODO: recompose
-    cx.reset_cursor();
     let movies = vec![Movie::new(1, "AAA"), Movie::new(3, "C"), Movie::new(2, "B")];
-    MoviesScreen(&cx, movies);
+    MoviesScreen(cx, movies);
     println!("{:#?}", cx);
 }

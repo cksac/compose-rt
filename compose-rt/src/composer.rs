@@ -1,71 +1,75 @@
 use crate::{CallId, Data, Slot, SlotId};
 use log::trace;
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, panic::Location, rc::Rc};
+use std::{collections::HashMap, fmt::Debug, panic::Location, rc::Rc};
 
 #[derive(Debug)]
 pub struct Composer {
-    tape: RefCell<Vec<Slot>>,
-    cursor: RefCell<usize>,
-    slot_key: RefCell<Option<usize>>,
-    recycle_bin: RefCell<HashMap<SlotId, Vec<Slot>>>,
+    tape: Vec<Slot>,
+    cursor: usize,
+    slot_key: Option<usize>,
+    recycle_bin: HashMap<SlotId, Vec<Slot>>,
 }
 
 impl Composer {
     pub fn new(capacity: usize) -> Self {
         Composer {
-            tape: RefCell::new(Vec::with_capacity(capacity)),
-            cursor: RefCell::new(0),
-            slot_key: RefCell::new(None),
-            recycle_bin: RefCell::new(HashMap::new()),
+            tape: Vec::with_capacity(capacity),
+            cursor: 0,
+            slot_key: None,
+            recycle_bin: HashMap::new(),
         }
     }
 }
 
 impl Composer {
-    pub fn reset_cursor(&self) {
-        *self.cursor.borrow_mut() = 0;
+    pub fn finalize(&mut self) {
+        self.cursor = 0;
+        // TODO: clear recycle bin?
     }
 
     #[track_caller]
-    pub fn tag<F, T>(&self, key: usize, func: F) -> T
+    pub fn tag<F, T>(&mut self, key: usize, func: F) -> T
     where
-        F: FnOnce() -> T,
+        F: FnOnce(&mut Composer) -> T,
     {
         // set the key of first encountered group
-        *self.slot_key.borrow_mut() = Some(key);
-        func()
+        self.slot_key = Some(key);
+        func(self)
     }
 
     #[track_caller]
-    pub fn group<N, C, S, U, Node>(&self, factory: N, content: C, skip: S, update: U) -> Rc<Node>
+    pub fn group<N, C, S, U, Node>(
+        &mut self,
+        factory: N,
+        content: C,
+        skip: S,
+        update: U,
+    ) -> Rc<Node>
     where
-        N: FnOnce() -> Node,
-        C: FnOnce(),
+        N: FnOnce(&mut Composer) -> Node,
+        C: FnOnce(&mut Composer),
         S: FnOnce(Rc<Node>) -> bool,
         U: FnOnce(Rc<Node>),
         Node: 'static + Debug,
     {
         let cursor = self.forward_cursor();
         let call_id = CallId::from(Location::caller());
-        let key = self.slot_key.borrow_mut().take();
+        let key = self.slot_key.take();
         let slot_id = SlotId::new(call_id, key);
 
         // found in recycle_bin, restore it
-        let slot_group = self.recycle_bin.borrow_mut().remove(&slot_id);
+        let slot_group = self.recycle_bin.remove(&slot_id);
         if let Some(group) = slot_group {
-            let mut tape = self.tape.borrow_mut();
             let mut curr_idx = cursor;
-
             // TODO: use gap table?
             for slot in group {
-                tape.insert(curr_idx, slot);
+                self.tape.insert(curr_idx, slot);
                 curr_idx += 1;
             }
         }
 
         let cached: Option<(SlotId, usize, Rc<dyn Data>)> = self
             .tape
-            .borrow()
             .get(cursor)
             .map(|s| (s.id, s.size, s.data.clone()));
 
@@ -74,7 +78,7 @@ impl Composer {
                 if let Ok(node) = p_data.downcast_rc::<Node>() {
                     trace!("{} - get cached {:?}", cursor, node);
                     if !skip(node.clone()) {
-                        content();
+                        content(self);
                         update(node.clone());
                         self.end_group(cursor, slot_id, node.clone());
                     }
@@ -87,45 +91,42 @@ impl Composer {
         }
 
         self.begin_group(cursor, slot_id);
-        let node = Rc::new(factory());
-        content();
+        let node = Rc::new(factory(self));
+        content(self);
         self.end_group(cursor, slot_id, node.clone());
 
         node
     }
 
-    fn begin_group(&self, cursor: usize, slot_id: SlotId) {
+    fn begin_group(&mut self, cursor: usize, slot_id: SlotId) {
         trace!("{} - group begin {:?}", cursor, slot_id);
         let slot = Slot::placeholder(slot_id);
-        self.tape.borrow_mut().insert(cursor, slot);
+        self.tape.insert(cursor, slot);
     }
 
-    fn end_group(&self, cursor: usize, slot_id: SlotId, data: Rc<dyn Data>) {
+    fn end_group(&mut self, cursor: usize, slot_id: SlotId, data: Rc<dyn Data>) {
         trace!("{} - group end   {:?} {:?}", cursor, slot_id, data);
-        if let Some(slot) = self.tape.borrow_mut().get_mut(cursor) {
+        let curr_cursor = self.current_cursor();
+        if let Some(slot) = self.tape.get_mut(cursor) {
             slot.data = data;
-            slot.size = self.current_cursor() - cursor;
+            slot.size = curr_cursor - cursor;
         }
     }
 
     #[inline]
-    fn current_cursor(&self) -> usize {
-        *self.cursor.borrow()
+    fn current_cursor(&mut self) -> usize {
+        self.cursor
     }
 
     #[inline]
-    fn forward_cursor(&self) -> usize {
+    fn forward_cursor(&mut self) -> usize {
         let cursor = self.current_cursor();
-        *self.cursor.borrow_mut() = cursor + 1;
+        self.cursor = cursor + 1;
         cursor
     }
 
-    fn recycle_slot(&self, cursor: usize, slot_id: SlotId, size: usize) {
-        let slots = self
-            .tape
-            .borrow_mut()
-            .drain(cursor..cursor + size)
-            .collect();
-        self.recycle_bin.borrow_mut().insert(slot_id, slots);
+    fn recycle_slot(&mut self, cursor: usize, slot_id: SlotId, size: usize) {
+        let slots = self.tape.drain(cursor..cursor + size).collect();
+        self.recycle_bin.insert(slot_id, slots);
     }
 }
