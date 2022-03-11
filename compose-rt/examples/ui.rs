@@ -26,6 +26,10 @@ impl RenderObject for RenderFlex {}
 pub struct RenderLabel(String);
 impl RenderObject for RenderLabel {}
 
+#[derive(Debug)]
+pub struct RenderImage(String);
+impl RenderObject for RenderImage {}
+
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
@@ -42,9 +46,15 @@ where
             flex.children.clear();
             for child in children {
                 // TODO: <dyn Data> to other trait object
-                if let Ok(t) = child.downcast_rc::<RefCell<RenderLabel>>() {
+                if let Ok(t) = child.clone().downcast_rc::<RefCell<RenderLabel>>() {
                     flex.children.push(t);
                 }
+                if let Ok(t) = child.clone().downcast_rc::<RefCell<RenderImage>>() {
+                    flex.children.push(t);
+                }
+                if let Ok(t) = child.downcast_rc::<RefCell<RenderFlex>>() {
+                    flex.children.push(t);
+                }                
             }
         },
         |_| false,
@@ -53,14 +63,27 @@ where
 }
 
 fn Text(cx: &mut Composer, text: impl AsRef<str>) {
-    let t = text.as_ref();
+    let text = text.as_ref();
     cx.group(
-        |_| RefCell::new(RenderLabel(t.to_string())),
+        |_| RefCell::new(RenderLabel(text.to_string())),
         |_| {},
         |_, _| {},
-        |n| n.borrow().0 == t,
+        |n| n.borrow().0 == text,
         |n| {
-            n.borrow_mut().0 = t.to_string();
+            n.borrow_mut().0 = text.to_string();
+        },
+    );
+}
+
+fn Image(cx: &mut Composer, url: impl AsRef<str>) {
+    let url = url.as_ref();
+    cx.group(
+        |_| RefCell::new(RenderImage(url.to_string())),
+        |_| {},
+        |_, _| {},
+        |n| n.borrow().0 == url,
+        |n| {
+            n.borrow_mut().0 = url.to_string();
         },
     );
 }
@@ -71,12 +94,14 @@ fn Text(cx: &mut Composer, text: impl AsRef<str>) {
 pub struct Movie {
     id: usize,
     name: String,
+    img_url: String,
 }
 impl Movie {
-    pub fn new(id: usize, name: impl Into<String>) -> Self {
+    pub fn new(id: usize, name: impl Into<String>, img_url: impl Into<String>) -> Self {
         Movie {
             id,
             name: name.into(),
+            img_url: img_url.into(),
         }
     }
 }
@@ -90,13 +115,10 @@ fn MoviesScreen(cx: &mut Composer, movies: Vec<Movie>) {
 }
 
 fn MovieOverview(cx: &mut Composer, movie: &Movie) {
-    Text(cx, &movie.name);
-    // Column(cx, |cx| {
-    //     Text(cx, "name");
-
-    //     //let count = cx.slot(|| 0usize);
-    //     Text(cx, movie.name.clone());
-    // })
+    Column(cx, |cx| {
+        Text(cx, &movie.name);
+        Image(cx, &movie.img_url);
+    })
 }
 
 fn main() {
@@ -106,12 +128,16 @@ fn main() {
         .init();
 
     let ref mut cx = Composer::new(10);
-    let movies = vec![Movie::new(1, "A"), Movie::new(2, "B")];
+    let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
     MoviesScreen(cx, movies);
     println!("{:#?}", cx);
     cx.finalize();
 
-    let movies = vec![Movie::new(1, "AAA"), Movie::new(3, "C"), Movie::new(2, "B")];
+    let movies = vec![
+        Movie::new(1, "AA", "IMG_AA"),
+        Movie::new(3, "C", "IMG_C"),
+        Movie::new(2, "B", "IMG_B"),
+    ];
     MoviesScreen(cx, movies);
     println!("{:#?}", cx);
 }
