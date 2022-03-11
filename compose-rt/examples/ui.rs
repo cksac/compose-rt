@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use compose_rt::Composer;
-use std::fmt::Debug;
+use std::{cell::RefCell, fmt::Debug};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
@@ -20,19 +20,28 @@ impl RenderObject for RenderText {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
-fn Column<F>(cx: &Composer, children: F)
+fn Column<C>(cx: &Composer, content: C)
 where
-    F: Fn(),
+    C: Fn(),
 {
-    cx.group(|| {
-        children();
-        RenderColumn {}
-    });
+    cx.group(
+        || RefCell::new(RenderColumn {}),
+        || content(),
+        |_| false,
+        |_| {},
+    );
 }
 
-fn Text(cx: &Composer, text: impl Into<String>) {
-    let t = text.into();
-    cx.group(|| RenderText(t));
+fn Text(cx: &Composer, text: impl AsRef<str>) {
+    let t = text.as_ref();
+    cx.group(
+        || RefCell::new(RenderText(t.to_string())),
+        || {},
+        |n| n.borrow().0 == t,
+        |n| {
+            n.borrow_mut().0 = t.to_string();
+        },
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -53,19 +62,19 @@ impl Movie {
 
 fn MoviesScreen(cx: &Composer, movies: Vec<Movie>) {
     Column(cx, || {
-        for (key, movie) in movies.iter().enumerate() {
+        for movie in &movies {
             cx.tag(movie.id, || MovieOverview(cx, &movie))
         }
     })
 }
 
 fn MovieOverview(cx: &Composer, movie: &Movie) {
-    Text(cx, movie.name.clone());
+    Text(cx, &movie.name);
     // Column(cx, || {
-    //     Text(cx, movie);
+    //     Text(cx, "name");
 
-    //     let count = cx.slot(|| 0usize);
-    //     Text(cx, format!("Likes: {}", count));
+    //     //let count = cx.slot(|| 0usize);
+    //     Text(cx, movie.name.clone());
     // })
 }
 
@@ -82,7 +91,7 @@ fn main() {
 
     // TODO: recompose
     cx.reset_cursor();
-    let movies = vec![Movie::new(1, "A"), Movie::new(3, "C"), Movie::new(2, "B")];
+    let movies = vec![Movie::new(1, "AAA"), Movie::new(3, "C"), Movie::new(2, "B")];
     MoviesScreen(&cx, movies);
     println!("{:#?}", cx);
 }

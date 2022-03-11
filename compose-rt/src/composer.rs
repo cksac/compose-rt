@@ -37,10 +37,13 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn group<Init, Return>(&self, init_fn: Init) -> Rc<Return>
+    pub fn group<N, C, S, U, Node>(&self, factory: N, content: C, skip: S, update: U) -> Rc<Node>
     where
-        Init: FnOnce() -> Return,
-        Return: 'static + Debug,
+        N: FnOnce() -> Node,
+        C: FnOnce(),
+        S: FnOnce(Rc<Node>) -> bool,
+        U: FnOnce(Rc<Node>),
+        Node: 'static + Debug,
     {
         let cursor = self.forward_cursor();
         let call_id = CallId::from(Location::caller());
@@ -68,12 +71,14 @@ impl Composer {
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
-                if let Ok(val) = p_data.downcast_rc::<Return>() {
-                    trace!("{} - get cached {:?}", cursor, val);
-                    // TODO: call update func instead?
-                    let data = Rc::new(init_fn());
-                    self.end_group(cursor, slot_id, data.clone());
-                    return data;
+                if let Ok(node) = p_data.downcast_rc::<Node>() {
+                    trace!("{} - get cached {:?}", cursor, node);
+                    if !skip(node.clone()) {
+                        content();
+                        update(node.clone());
+                        self.end_group(cursor, slot_id, node.clone());
+                    }
+                    return node;
                 }
             }
 
@@ -82,10 +87,11 @@ impl Composer {
         }
 
         self.begin_group(cursor, slot_id);
-        let data = Rc::new(init_fn());
-        self.end_group(cursor, slot_id, data.clone());
+        let node = Rc::new(factory());
+        content();
+        self.end_group(cursor, slot_id, node.clone());
 
-        data
+        node
     }
 
     fn begin_group(&self, cursor: usize, slot_id: SlotId) {
