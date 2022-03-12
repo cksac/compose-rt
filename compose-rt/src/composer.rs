@@ -26,9 +26,10 @@ impl Composer {
 }
 
 impl Composer {
-    pub fn finalize(&mut self) {
+    pub fn finalize(mut self) -> Composer {
         self.cursor = 0;
         // TODO: clear recycle bin?
+        self
     }
 
     #[track_caller]

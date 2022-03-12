@@ -125,17 +125,18 @@ fn main() {
         .filter_level(log::LevelFilter::Trace)
         .init();
 
-    let ref mut cx = Composer::new(10);
+    let mut cx = Composer::new(10);
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    MoviesScreen(cx, movies);
+    MoviesScreen(&mut cx, movies);
     println!("{:#?}", cx);
-    cx.finalize();
+
+    let mut cx = cx.finalize();
 
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    MoviesScreen(cx, movies);
+    MoviesScreen(&mut cx, movies);
     println!("{:#?}", cx);
 }
