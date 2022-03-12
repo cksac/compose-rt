@@ -1,11 +1,23 @@
 #![allow(non_snake_case)]
 
 use compose_rt::Composer;
+use downcast_rs::{impl_downcast, Downcast};
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
 ////////////////////////////////////////////////////////////////////////////
+pub trait Data: Debug + Downcast + Unpin {}
+impl_downcast!(Data);
+
+impl<T: 'static + Debug + Unpin> Data for T {}
+
+impl<T: 'static + Debug + Unpin> Into<Box<dyn Data>> for Rc<RefCell<T>> {
+    fn into(self) -> Box<dyn Data> {
+        Box::new(self)
+    }
+}
+
 pub trait RenderObject: Debug {}
 
 #[derive(Debug)]
@@ -33,16 +45,17 @@ impl RenderObject for RenderImage {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
+type Context<'a> = &'a mut Composer<dyn Data>;
 
-fn Column<C>(cx: &mut Composer, content: C)
+fn Column<C>(cx: Context, content: C)
 where
-    C: Fn(&mut Composer),
+    C: Fn(Context),
 {
     cx.group(
         |_| Rc::new(RefCell::new(RenderFlex::new())),
         |cx| content(cx),
         |node, children| {
-            let mut flex = node.borrow_mut();
+            let mut flex = (**node).borrow_mut();
             flex.children.clear();
             for child in children {
                 // TODO: <dyn Data> to other trait object?
@@ -60,7 +73,7 @@ where
     );
 }
 
-fn Text(cx: &mut Composer, text: impl AsRef<str>) {
+fn Text(cx: Context, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.group(
         |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
@@ -68,12 +81,13 @@ fn Text(cx: &mut Composer, text: impl AsRef<str>) {
         |_, _| {},
         |n| n.borrow().0 == text,
         |n| {
-            n.borrow_mut().0 = text.to_string();
+            let mut n = (**n).borrow_mut();
+            n.0 = text.to_string();
         },
     );
 }
 
-fn Image(cx: &mut Composer, url: impl AsRef<str>) {
+fn Image(cx: Context, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.group(
         |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
@@ -81,7 +95,8 @@ fn Image(cx: &mut Composer, url: impl AsRef<str>) {
         |_, _| {},
         |n| n.borrow().0 == url,
         |n| {
-            n.borrow_mut().0 = url.to_string();
+            let mut n = (**n).borrow_mut();
+            n.0 = url.to_string();
         },
     );
 }
@@ -104,7 +119,7 @@ impl Movie {
     }
 }
 
-fn MoviesScreen(cx: &mut Composer, movies: Vec<Movie>) {
+fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
     Column(cx, |cx| {
         for movie in &movies {
             cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
@@ -112,7 +127,7 @@ fn MoviesScreen(cx: &mut Composer, movies: Vec<Movie>) {
     })
 }
 
-fn MovieOverview(cx: &mut Composer, movie: &Movie) {
+fn MovieOverview(cx: Context, movie: &Movie) {
     Column(cx, |cx| {
         Text(cx, &movie.name);
         Image(cx, &movie.img_url);

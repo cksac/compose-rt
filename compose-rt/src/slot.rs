@@ -1,18 +1,8 @@
-use downcast_rs::{impl_downcast, Downcast};
 use std::{
     fmt::{self, Debug},
     hash::Hash,
     panic::Location,
-    pin::Pin,
 };
-
-pub trait Data: Debug + Downcast + Unpin {}
-impl_downcast!(Data);
-
-impl<T: 'static + Debug + Unpin> Data for T {}
-
-#[derive(Debug)]
-struct PlaceHolder;
 
 #[derive(Clone, Copy)]
 pub struct CallId {
@@ -105,34 +95,23 @@ impl Debug for SlotId {
     }
 }
 
-pub struct Slot {
+pub struct Slot<T> {
     pub id: SlotId,
     pub size: usize,
-    pub data: Pin<Box<dyn Data>>,
+    pub data: Option<T>,
 }
 
-impl Slot {
-    pub fn new<T>(call_id: impl Into<CallId>, data: Box<T>) -> Self
-    where
-        T: 'static + Data,
-    {
-        Slot {
-            id: SlotId::new(call_id, None),
-            data: Box::pin(data),
-            size: 1,
-        }
-    }
-
+impl<T> Slot<T> {
     pub fn placeholder(slot_id: SlotId) -> Self {
         Slot {
             id: slot_id,
-            data: Box::pin(PlaceHolder),
+            data: None,
             size: 1,
         }
     }
 }
 
-impl Debug for Slot {
+impl<T: Debug> Debug for Slot<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("Slot");
         s.field("id", &self.id);
