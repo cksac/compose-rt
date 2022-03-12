@@ -2,7 +2,8 @@
 A positional memoization runtime similar to Jetpack Compose Runtime. 
 
 # example
-```
+
+```toml
 [dependencies]
 compose-rt = "0.1"
 downcast-rs = "1.2.0"
@@ -10,6 +11,7 @@ log = "0.4"
 env_logger = "0.6"
 fake = "2.4"
 ```
+
 ```rust
 #![allow(non_snake_case)]
 
