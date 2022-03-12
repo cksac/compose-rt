@@ -200,8 +200,7 @@ impl Movie {
     }
 }
 
-// TODO: ROOT should not track caller, require start_root in composer
-// #[track_caller]
+#[track_caller]
 fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
     Column(cx, |cx| {
         for movie in &movies {
@@ -224,19 +223,25 @@ fn main() {
         .filter_level(log::LevelFilter::Trace)
         .init();
 
+    // define root compose
+    let root_fn = |cx: Context, movies| MoviesScreen(cx, movies);
+
     let mut cx = Composer::new(10);
 
+    // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    MoviesScreen(&mut cx, movies);
+    root_fn(&mut cx, movies);
     println!("{:#?}", cx);
 
+    // reset composer cursor, etc. for recompose
     cx = cx.finalize();
 
+    // rerun with new input
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
         Movie::new(3, "C", "IMG_C"),
-        Movie::new(2, "D", "IMG_B"),
+        Movie::new(2, "B", "IMG_B"),
     ];
-    MoviesScreen(&mut cx, movies);
+    root_fn(&mut cx, movies);
     println!("{:#?}", cx);
 }
