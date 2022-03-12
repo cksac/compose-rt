@@ -1,7 +1,14 @@
 #![allow(non_snake_case)]
 
 use compose_rt::Composer;
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use downcast_rs::{impl_downcast, Downcast};
+use fake::{Fake, Faker};
+use std::{
+    any::TypeId,
+    cell::{RefCell, RefMut},
+    fmt::Debug,
+    rc::Rc,
+};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
@@ -12,30 +19,47 @@ pub enum Node {
     RenderFlex(Rc<RefCell<RenderFlex>>),
     RenderLabel(Rc<RefCell<RenderLabel>>),
     RenderImage(Rc<RefCell<RenderImage>>),
+    RenderObject(Rc<RefCell<dyn RenderObject>>),
 }
 
-impl Into<Box<Node>> for Rc<RefCell<RenderFlex>> {
-    fn into(self) -> Box<Node> {
-        Box::new(Node::RenderFlex(self))
-    }
-}
-impl Into<Box<Node>> for Rc<RefCell<RenderLabel>> {
-    fn into(self) -> Box<Node> {
-        Box::new(Node::RenderLabel(self))
-    }
-}
-impl Into<Box<Node>> for Rc<RefCell<RenderImage>> {
-    fn into(self) -> Box<Node> {
-        Box::new(Node::RenderImage(self))
-    }
+macro_rules! into_boxed_node {
+    ($ty:ident) => {
+        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
+            }
+        }
+    };
+    (dyn $ty:ident) => {
+        impl Into<Box<Node>> for Rc<RefCell<dyn $ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
+            }
+        }
+    };
 }
 
-pub trait RenderObject: Debug {}
+into_boxed_node!(RenderFlex);
+into_boxed_node!(RenderLabel);
+into_boxed_node!(RenderImage);
+into_boxed_node!(dyn RenderObject);
 
-#[derive(Debug)]
+pub trait RenderObject: Debug + Downcast + Unpin {}
+impl_downcast!(RenderObject);
+
 pub struct RenderFlex {
     children: Vec<Rc<RefCell<dyn RenderObject>>>,
 }
+
+impl Debug for RenderFlex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // trim debug print
+        f.debug_struct("RenderFlex")
+            .field("children_count", &self.children.len())
+            .finish()
+    }
+}
+
 impl RenderFlex {
     pub fn new() -> Self {
         RenderFlex {
@@ -59,7 +83,8 @@ impl RenderObject for RenderImage {}
 ////////////////////////////////////////////////////////////////////////////
 type Context<'a> = &'a mut Composer<Node>;
 
-fn Column<C>(cx: Context, content: C)
+#[track_caller]
+pub fn Column<C>(cx: Context, content: C)
 where
     C: Fn(Context),
 {
@@ -80,6 +105,8 @@ where
                     Node::RenderImage(c) => {
                         flex.children.push(c.clone());
                     }
+                    Node::RenderObject(c) => flex.children.push(c.clone()),
+                    _ => {}
                 }
             }
         },
@@ -88,7 +115,8 @@ where
     );
 }
 
-fn Text(cx: Context, text: impl AsRef<str>) {
+#[track_caller]
+pub fn Text(cx: Context, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.group(
         |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
@@ -102,7 +130,8 @@ fn Text(cx: Context, text: impl AsRef<str>) {
     );
 }
 
-fn Image(cx: Context, url: impl AsRef<str>) {
+#[track_caller]
+pub fn Image(cx: Context, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.group(
         |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
@@ -112,6 +141,38 @@ fn Image(cx: Context, url: impl AsRef<str>) {
         |n| {
             let mut n = n.borrow_mut();
             n.0 = url.to_string();
+        },
+    );
+}
+
+#[track_caller]
+pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
+    let text = text.as_ref();
+    cx.group(
+        |_| {
+            let obj: Rc<RefCell<dyn RenderObject>> = if Faker.fake::<bool>() {
+                let url = format!("http://image.com/{}.png", text);
+                Rc::new(RefCell::new(RenderImage(url)))
+            } else {
+                Rc::new(RefCell::new(RenderLabel(text.to_string())))
+            };
+            obj
+        },
+        |_| {},
+        |_, _| {},
+        |_| false,
+        |n| {
+            let n = n.borrow_mut();
+            let ty_id = (*n).type_id();
+
+            if ty_id == TypeId::of::<RenderLabel>() {
+                let mut label = RefMut::map(n, |x| x.downcast_mut::<RenderLabel>().unwrap());
+                label.0 = text.to_string();
+            } else if ty_id == TypeId::of::<RenderImage>() {
+                let mut img = RefMut::map(n, |x| x.downcast_mut::<RenderImage>().unwrap());
+                let url = format!("http://image.com/{}.png", text);
+                img.0 = url;
+            };
         },
     );
 }
@@ -134,6 +195,8 @@ impl Movie {
     }
 }
 
+// TODO: ROOT should not track caller, require start_root in composer
+// #[track_caller]
 fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
     Column(cx, |cx| {
         for movie in &movies {
@@ -142,13 +205,14 @@ fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
     })
 }
 
+#[track_caller]
 fn MovieOverview(cx: Context, movie: &Movie) {
     Column(cx, |cx| {
         Text(cx, &movie.name);
         Image(cx, &movie.img_url);
+        RandomRenderObject(cx, Faker.fake::<String>());
     })
 }
-
 fn main() {
     // Setup logging
     env_logger::Builder::from_default_env()
@@ -156,6 +220,7 @@ fn main() {
         .init();
 
     let mut cx = Composer::new(10);
+
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
     MoviesScreen(&mut cx, movies);
     println!("{:#?}", cx);
@@ -165,7 +230,7 @@ fn main() {
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
         Movie::new(3, "C", "IMG_C"),
-        Movie::new(2, "B", "IMG_B"),
+        Movie::new(2, "D", "IMG_B"),
     ];
     MoviesScreen(&mut cx, movies);
     println!("{:#?}", cx);

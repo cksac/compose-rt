@@ -34,8 +34,19 @@ where
     N: ?Sized + Unpin + Debug + Downcast,
 {
     pub fn finalize(mut self) -> Composer<N> {
+        self.tape.truncate(self.cursor);
+        self.slot_depth.truncate(self.cursor);
         self.cursor = 0;
-        // TODO: clear recycle bin?
+        self.depth = 0;
+        self.recycle_bin.clear();
+        self
+    }
+
+    pub fn finalize_with<F>(mut self, func: F) -> Composer<N>
+    where
+        F: FnOnce(&mut Self),
+    {
+        func(&mut self);
         self
     }
 
@@ -63,7 +74,7 @@ where
         S: FnOnce(&mut Node) -> bool,
         A: FnOnce(&mut Node, Vec<&N>),
         U: FnOnce(&mut Node),
-        Node: 'static + Debug + Unpin + Into<Box<N>>,
+        Node: Debug + Downcast + Unpin + Into<Box<N>>,
     {
         // remember current cursor
         let cursor = self.forward_cursor();
@@ -111,6 +122,7 @@ where
                         node
                     );
                     if skip(node) {
+                        trace!("{: >15} {} - {:?}", "skip_group", cursor, slot_id);
                         self.skip_group(cursor, p_size);
                     } else {
                         content(self);
@@ -119,20 +131,44 @@ where
                         update(node);
                         self.end_update(cursor);
                     }
-                    return;
+                } else {
+                    trace!(
+                        "{: >15} {} - {:?} - {:?}",
+                        "downcast failed",
+                        cursor,
+                        slot_id,
+                        p_data.type_id()
+                    );
                 }
+                return;
             }
             // move previous cached slot to recycle bin
             self.recycle_slot(cursor, p_slot_id, p_size);
         }
 
         self.begin_group(cursor, slot_id);
-
         let mut node = factory(self);
         content(self);
         let children = self.children_of_slot_at(cursor);
         apply(&mut node, children);
-        self.end_group(cursor, Pin::new(node.into()));
+
+        trace!(
+            "{: >15} {} - {:?} - {:?}",
+            "node",
+            cursor,
+            slot_id,
+            node.type_id()
+        );
+        let data = Pin::new(node.into());
+        trace!(
+            "{: >15} {} - {:?} - {:?}",
+            "data",
+            cursor,
+            slot_id,
+            data.type_id()
+        );
+
+        self.end_group(cursor, data);
     }
 
     fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&N> {
@@ -178,7 +214,13 @@ where
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {
             slot.size = curr_cursor - cursor;
-            trace!("{: >15} {} - {:?}", "end_update", cursor, slot.id);
+            trace!(
+                "{: >15} {} - {:?} - {:?}",
+                "end_update",
+                cursor,
+                slot.id,
+                slot.data.as_ref().unwrap()
+            );
         }
     }
 

@@ -9,3 +9,4 @@ log = "0.4.14"
 
 [dev-dependencies]
 env_logger = "0.6"
+fake = "2.4"
