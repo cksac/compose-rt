@@ -1,12 +1,7 @@
 #![allow(non_snake_case)]
 
 use compose_rt::Composer;
-use std::{
-    any::{Any, TypeId},
-    cell::RefCell,
-    fmt::Debug,
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
@@ -136,11 +131,11 @@ fn main() {
     println!("{:#?}", cx);
     cx.finalize();
 
-    // let movies = vec![
-    //     Movie::new(1, "AA", "IMG_AA"),
-    //     Movie::new(3, "C", "IMG_C"),
-    //     Movie::new(2, "B", "IMG_B"),
-    // ];
-    // MoviesScreen(cx, movies);
-    // println!("{:#?}", cx);
+    let movies = vec![
+        Movie::new(1, "AA", "IMG_AA"),
+        Movie::new(3, "C", "IMG_C"),
+        Movie::new(2, "B", "IMG_B"),
+    ];
+    MoviesScreen(cx, movies);
+    println!("{:#?}", cx);
 }

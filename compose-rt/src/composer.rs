@@ -1,18 +1,6 @@
 use crate::{CallId, Data, Slot, SlotId};
 use log::trace;
-use std::{collections::HashMap, fmt::Debug, panic::Location};
-
-pub trait Compose {
-    fn tag<F, T>(&mut self, key: usize, func: F) -> T;
-    fn group<N, C, S, A, U, Node>(&mut self, factory: N, content: C, apply: A, skip: S, update: U)
-    where
-        N: FnOnce(&mut Composer) -> Node,
-        C: FnOnce(&mut Composer),
-        S: FnOnce(&Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&dyn Data>),
-        U: FnOnce(&mut Node),
-        Node: 'static + Debug;
-}
+use std::{collections::HashMap, fmt::Debug, panic::Location, pin::Pin};
 
 #[derive(Debug)]
 pub struct Composer {
@@ -67,7 +55,7 @@ impl Composer {
         S: FnOnce(&Node) -> bool,
         A: FnOnce(&mut Node, Vec<&dyn Data>),
         U: FnOnce(&mut Node),
-        Node: 'static + Debug,
+        Node: 'static + Debug + Unpin,
     {
         // remember current cursor
         let cursor = self.forward_cursor();
@@ -96,19 +84,17 @@ impl Composer {
             }
         }
 
-        // if let Some((head, tail)) = self.tape.split_first_mut() {
-
-        // }
-
-        //: Option<(SlotId, usize, &dyn Data)>
-        let cached = self
-            .tape
-            .get_mut(cursor)
-            .map(|s| (s.id, s.size, &mut *s.data));
+        let cached = self.tape.get_mut(cursor).map(|s| {
+            let ptr = s.data.as_mut().get_mut() as *mut dyn Data;
+            // `Composer` required to guarantee `content` function not able to access current slot in self.tape
+            // Otherwise need to wrap self.tape with RefCell to remove this unsafe but come with cost
+            let data = Box::leak(unsafe { Box::from_raw(ptr) });
+            (s.id, s.size, data)
+        });
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
-                if let Some(mut node) = p_data.downcast_mut::<Node>() {
+                if let Some(node) = p_data.downcast_mut::<Node>() {
                     trace!(
                         "{: >15} {} - {:?} - {:?}",
                         "get_cached",
@@ -116,13 +102,13 @@ impl Composer {
                         slot_id,
                         node
                     );
-                    if skip(&node) {
+                    if skip(node) {
                         self.skip_group(cursor, p_size);
                     } else {
                         content(self);
                         let children = self.children_of_slot_at(cursor);
-                        apply(&mut *node, children);
-                        update(&mut node);
+                        apply(node, children);
+                        update(node);
                         self.end_update(cursor);
                     }
                     return;
@@ -133,10 +119,11 @@ impl Composer {
         }
 
         self.begin_group(cursor, slot_id);
-        let mut node = Box::new(factory(self));
+        let mut node = Box::pin(factory(self));
         content(self);
         let children = self.children_of_slot_at(cursor);
-        apply(&mut *node, children);
+        let node_mut = node.as_mut().get_mut();
+        apply(node_mut, children);
         self.end_group(cursor, node);
     }
 
@@ -164,7 +151,7 @@ impl Composer {
         trace!("{: >15} {} - {:?}", "begin_group", cursor, slot_id);
     }
 
-    fn end_group(&mut self, cursor: usize, data: Box<dyn Data>) {
+    fn end_group(&mut self, cursor: usize, data: Pin<Box<dyn Data>>) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {

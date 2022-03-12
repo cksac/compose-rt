@@ -1,15 +1,15 @@
 use downcast_rs::{impl_downcast, Downcast};
 use std::{
-    any::Any,
     fmt::{self, Debug},
     hash::Hash,
     panic::Location,
+    pin::Pin,
 };
 
-pub trait Data: Debug + Downcast {}
+pub trait Data: Debug + Downcast + Unpin {}
 impl_downcast!(Data);
 
-impl<T: 'static + Debug> Data for T {}
+impl<T: 'static + Debug + Unpin> Data for T {}
 
 #[derive(Debug)]
 struct PlaceHolder;
@@ -108,7 +108,7 @@ impl Debug for SlotId {
 pub struct Slot {
     pub id: SlotId,
     pub size: usize,
-    pub data: Box<dyn Data>,
+    pub data: Pin<Box<dyn Data>>,
 }
 
 impl Slot {
@@ -118,7 +118,7 @@ impl Slot {
     {
         Slot {
             id: SlotId::new(call_id, None),
-            data: data,
+            data: Box::pin(data),
             size: 1,
         }
     }
@@ -126,7 +126,7 @@ impl Slot {
     pub fn placeholder(slot_id: SlotId) -> Self {
         Slot {
             id: slot_id,
-            data: Box::new(PlaceHolder),
+            data: Box::pin(PlaceHolder),
             size: 1,
         }
     }
