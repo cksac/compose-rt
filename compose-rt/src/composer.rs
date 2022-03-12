@@ -3,11 +3,13 @@ use log::trace;
 use std::{any::Any, collections::HashMap, fmt::Debug, panic::Location, pin::Pin};
 
 pub trait ComposeNode {
-    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T>;
+    fn cast_mut<T>(&mut self) -> Option<&mut T>
+    where
+        T: 'static + Unpin + Debug;
 }
 
 #[derive(Debug)]
-pub struct Composer<N> {
+pub struct Composer<N: ?Sized> {
     tape: Vec<Slot<Pin<Box<N>>>>,
     slot_depth: Vec<usize>,
     depth: usize,
@@ -18,7 +20,8 @@ pub struct Composer<N> {
 
 impl<N> Composer<N>
 where
-    N: 'static + Any + Unpin + Debug + ComposeNode,
+    N: 'static + ?Sized + Any + Unpin + Debug,
+    for<'a> &'a mut N: ComposeNode,
 {
     pub fn new(capacity: usize) -> Self {
         Composer {
@@ -34,7 +37,8 @@ where
 
 impl<N> Composer<N>
 where
-    N: 'static + Any + Unpin + Debug + ComposeNode,
+    N: 'static + ?Sized + Any + Unpin + Debug,
+    for<'a> &'a mut N: ComposeNode,
 {
     pub fn finalize(mut self) -> Composer<N> {
         self.tape.truncate(self.cursor);
@@ -77,7 +81,7 @@ where
         S: FnOnce(&mut Node) -> bool,
         A: FnOnce(&mut Node, Vec<&N>),
         U: FnOnce(&mut Node),
-        Node: Any + Debug + Unpin + Into<N>,
+        Node: Any + Debug + Unpin + Into<Box<N>>,
     {
         // remember current cursor
         let cursor = self.forward_cursor();
@@ -114,7 +118,7 @@ where
             (s.id, s.size, data)
         });
 
-        if let Some((p_slot_id, p_size, p_data)) = cached {
+        if let Some((p_slot_id, p_size, mut p_data)) = cached {
             if slot_id == p_slot_id {
                 if let Some(node) = p_data.cast_mut::<Node>() {
                     trace!(
@@ -163,7 +167,7 @@ where
             node.type_id()
         );
 
-        let data = Box::pin(node.into());
+        let data = Pin::new(node.into());
         trace!(
             "{: >15} {} - {:?} - {:?}",
             "data",

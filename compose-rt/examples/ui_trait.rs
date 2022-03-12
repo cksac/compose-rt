@@ -24,7 +24,7 @@ impl<T: 'static + Debug + Unpin> Into<Box<dyn Node>> for Rc<RefCell<T>> {
     }
 }
 
-impl ComposeNode for Box<dyn Node> {
+impl<'a> ComposeNode for &'a mut dyn Node {
     fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
         self.downcast_mut::<T>()
     }
@@ -73,7 +73,7 @@ impl RenderObject for RenderImage {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
-type Context<'a> = &'a mut Composer<Box<dyn Node>>;
+type Context<'a> = &'a mut Composer<dyn Node>;
 
 #[track_caller]
 pub fn Column<C>(cx: Context, content: C)

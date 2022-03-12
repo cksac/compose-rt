@@ -24,16 +24,16 @@ pub enum Node {
 
 macro_rules! into_boxed_node {
     ($ty:ident) => {
-        impl Into<Node> for Rc<RefCell<$ty>> {
-            fn into(self) -> Node {
-                Node::$ty(self)
+        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
             }
         }
     };
     (dyn $ty:ident) => {
-        impl Into<Node> for Rc<RefCell<dyn $ty>> {
-            fn into(self) -> Node {
-                Node::$ty(self)
+        impl Into<Box<Node>> for Rc<RefCell<dyn $ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
             }
         }
     };
@@ -44,7 +44,7 @@ into_boxed_node!(RenderLabel);
 into_boxed_node!(RenderImage);
 into_boxed_node!(dyn RenderObject);
 
-impl ComposeNode for Node {
+impl<'a> ComposeNode for &'a mut Node {
     fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
         match self {
             Node::RenderFlex(r) => r.as_any_mut().downcast_mut::<T>(),
@@ -230,7 +230,7 @@ fn main() {
     MoviesScreen(&mut cx, movies);
     println!("{:#?}", cx);
 
-    let mut cx = cx.finalize();
+    cx = cx.finalize();
 
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
