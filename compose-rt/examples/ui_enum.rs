@@ -1,20 +1,32 @@
 #![allow(non_snake_case)]
 
 use compose_rt::Composer;
-use downcast_rs::{impl_downcast, Downcast};
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
 ////////////////////////////////////////////////////////////////////////////
-pub trait Data: Debug + Downcast + Unpin {}
-impl_downcast!(Data);
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Node {
+    RenderFlex(Rc<RefCell<RenderFlex>>),
+    RenderLabel(Rc<RefCell<RenderLabel>>),
+    RenderImage(Rc<RefCell<RenderImage>>),
+}
 
-impl<T: 'static + Debug + Unpin> Data for T {}
-
-impl<T: 'static + Debug + Unpin> Into<Box<dyn Data>> for Rc<RefCell<T>> {
-    fn into(self) -> Box<dyn Data> {
-        Box::new(self)
+impl Into<Box<Node>> for Rc<RefCell<RenderFlex>> {
+    fn into(self) -> Box<Node> {
+        Box::new(Node::RenderFlex(self))
+    }
+}
+impl Into<Box<Node>> for Rc<RefCell<RenderLabel>> {
+    fn into(self) -> Box<Node> {
+        Box::new(Node::RenderLabel(self))
+    }
+}
+impl Into<Box<Node>> for Rc<RefCell<RenderImage>> {
+    fn into(self) -> Box<Node> {
+        Box::new(Node::RenderImage(self))
     }
 }
 
@@ -45,7 +57,7 @@ impl RenderObject for RenderImage {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
-type Context<'a> = &'a mut Composer<dyn Data>;
+type Context<'a> = &'a mut Composer<Node>;
 
 fn Column<C>(cx: Context, content: C)
 where
@@ -55,16 +67,19 @@ where
         |_| Rc::new(RefCell::new(RenderFlex::new())),
         |cx| content(cx),
         |node, children| {
-            let mut flex = (**node).borrow_mut();
+            let mut flex = node.borrow_mut();
             flex.children.clear();
             for child in children {
-                // TODO: <dyn Data> to other trait object?
-                if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderLabel>>>().cloned() {
-                    flex.children.push(c);
-                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderImage>>>().cloned() {
-                    flex.children.push(c);
-                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderFlex>>>().cloned() {
-                    flex.children.push(c);
+                match child {
+                    Node::RenderFlex(c) => {
+                        flex.children.push(c.clone());
+                    }
+                    Node::RenderLabel(c) => {
+                        flex.children.push(c.clone());
+                    }
+                    Node::RenderImage(c) => {
+                        flex.children.push(c.clone());
+                    }
                 }
             }
         },
@@ -81,7 +96,7 @@ fn Text(cx: Context, text: impl AsRef<str>) {
         |_, _| {},
         |n| n.borrow().0 == text,
         |n| {
-            let mut n = (**n).borrow_mut();
+            let mut n = n.borrow_mut();
             n.0 = text.to_string();
         },
     );
@@ -95,7 +110,7 @@ fn Image(cx: Context, url: impl AsRef<str>) {
         |_, _| {},
         |n| n.borrow().0 == url,
         |n| {
-            let mut n = (**n).borrow_mut();
+            let mut n = n.borrow_mut();
             n.0 = url.to_string();
         },
     );
