@@ -1,7 +1,12 @@
 #![allow(non_snake_case)]
 
-use compose_rt::{Composer, Data};
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use compose_rt::Composer;
+use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
+    fmt::Debug,
+    rc::Rc,
+};
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend
@@ -39,22 +44,20 @@ where
     C: Fn(&mut Composer),
 {
     cx.group(
-        |_| RefCell::new(RenderFlex::new()),
+        |_| Rc::new(RefCell::new(RenderFlex::new())),
         |cx| content(cx),
-        |node: Rc<RefCell<RenderFlex>>, children: Vec<Rc<dyn Data>>| {
+        |node, children| {
             let mut flex = node.borrow_mut();
             flex.children.clear();
             for child in children {
-                // TODO: <dyn Data> to other trait object
-                if let Ok(t) = child.clone().downcast_rc::<RefCell<RenderLabel>>() {
-                    flex.children.push(t);
+                // TODO: <dyn Data> to other trait object?
+                if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderLabel>>>().cloned() {
+                    flex.children.push(c);
+                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderImage>>>().cloned() {
+                    flex.children.push(c);
+                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderFlex>>>().cloned() {
+                    flex.children.push(c);
                 }
-                if let Ok(t) = child.clone().downcast_rc::<RefCell<RenderImage>>() {
-                    flex.children.push(t);
-                }
-                if let Ok(t) = child.downcast_rc::<RefCell<RenderFlex>>() {
-                    flex.children.push(t);
-                }                
             }
         },
         |_| false,
@@ -65,7 +68,7 @@ where
 fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.group(
-        |_| RefCell::new(RenderLabel(text.to_string())),
+        |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
         |_| {},
         |_, _| {},
         |n| n.borrow().0 == text,
@@ -78,7 +81,7 @@ fn Text(cx: &mut Composer, text: impl AsRef<str>) {
 fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.group(
-        |_| RefCell::new(RenderImage(url.to_string())),
+        |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
         |_| {},
         |_, _| {},
         |n| n.borrow().0 == url,
@@ -133,11 +136,11 @@ fn main() {
     println!("{:#?}", cx);
     cx.finalize();
 
-    let movies = vec![
-        Movie::new(1, "AA", "IMG_AA"),
-        Movie::new(3, "C", "IMG_C"),
-        Movie::new(2, "B", "IMG_B"),
-    ];
-    MoviesScreen(cx, movies);
-    println!("{:#?}", cx);
+    // let movies = vec![
+    //     Movie::new(1, "AA", "IMG_AA"),
+    //     Movie::new(3, "C", "IMG_C"),
+    //     Movie::new(2, "B", "IMG_B"),
+    // ];
+    // MoviesScreen(cx, movies);
+    // println!("{:#?}", cx);
 }

@@ -1,6 +1,18 @@
 use crate::{CallId, Data, Slot, SlotId};
 use log::trace;
-use std::{collections::HashMap, fmt::Debug, panic::Location, rc::Rc, vec};
+use std::{collections::HashMap, fmt::Debug, panic::Location};
+
+pub trait Compose {
+    fn tag<F, T>(&mut self, key: usize, func: F) -> T;
+    fn group<N, C, S, A, U, Node>(&mut self, factory: N, content: C, apply: A, skip: S, update: U)
+    where
+        N: FnOnce(&mut Composer) -> Node,
+        C: FnOnce(&mut Composer),
+        S: FnOnce(&Node) -> bool,
+        A: FnOnce(&mut Node, Vec<&dyn Data>),
+        U: FnOnce(&mut Node),
+        Node: 'static + Debug;
+}
 
 #[derive(Debug)]
 pub struct Composer {
@@ -52,9 +64,9 @@ impl Composer {
     ) where
         N: FnOnce(&mut Composer) -> Node,
         C: FnOnce(&mut Composer),
-        S: FnOnce(Rc<Node>) -> bool,
-        A: FnOnce(Rc<Node>, Vec<Rc<dyn Data>>),
-        U: FnOnce(Rc<Node>),
+        S: FnOnce(&Node) -> bool,
+        A: FnOnce(&mut Node, Vec<&dyn Data>),
+        U: FnOnce(&mut Node),
         Node: 'static + Debug,
     {
         // remember current cursor
@@ -84,14 +96,19 @@ impl Composer {
             }
         }
 
-        let cached: Option<(SlotId, usize, Rc<dyn Data>)> = self
+        // if let Some((head, tail)) = self.tape.split_first_mut() {
+
+        // }
+
+        //: Option<(SlotId, usize, &dyn Data)>
+        let cached = self
             .tape
-            .get(cursor)
-            .map(|s| (s.id, s.size, s.data.clone()));
+            .get_mut(cursor)
+            .map(|s| (s.id, s.size, &mut *s.data));
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
-                if let Ok(node) = p_data.downcast_rc::<Node>() {
+                if let Some(mut node) = p_data.downcast_mut::<Node>() {
                     trace!(
                         "{: >15} {} - {:?} - {:?}",
                         "get_cached",
@@ -99,12 +116,13 @@ impl Composer {
                         slot_id,
                         node
                     );
-                    if skip(node.clone()) {
+                    if skip(&node) {
                         self.skip_group(cursor, p_size);
                     } else {
                         content(self);
-                        self.apply_children(cursor, node.clone(), apply);
-                        update(node.clone());
+                        let children = self.children_of_slot_at(cursor);
+                        apply(&mut *node, children);
+                        update(&mut node);
                         self.end_update(cursor);
                     }
                     return;
@@ -115,16 +133,14 @@ impl Composer {
         }
 
         self.begin_group(cursor, slot_id);
-        let node = Rc::new(factory(self));
+        let mut node = Box::new(factory(self));
         content(self);
-        self.apply_children(cursor, node.clone(), apply);
+        let children = self.children_of_slot_at(cursor);
+        apply(&mut *node, children);
         self.end_group(cursor, node);
     }
 
-    fn apply_children<Node, A>(&mut self, cursor: usize, node: Rc<Node>, apply: A)
-    where
-        A: FnOnce(Rc<Node>, Vec<Rc<dyn Data>>),
-    {
+    fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&dyn Data> {
         let child_start = cursor + 1;
         let children = self.slot_depth[child_start..self.cursor]
             .iter()
@@ -137,10 +153,9 @@ impl Composer {
                     None
                 }
             })
-            .filter_map(|c| self.tape.get(c).map(|s| s.data.clone()))
+            .filter_map(|c| self.tape.get(c).map(|s| &*s.data))
             .collect();
-
-        apply(node, children);
+        children
     }
 
     fn begin_group(&mut self, cursor: usize, slot_id: SlotId) {
@@ -149,7 +164,7 @@ impl Composer {
         trace!("{: >15} {} - {:?}", "begin_group", cursor, slot_id);
     }
 
-    fn end_group(&mut self, cursor: usize, data: Rc<dyn Data>) {
+    fn end_group(&mut self, cursor: usize, data: Box<dyn Data>) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {

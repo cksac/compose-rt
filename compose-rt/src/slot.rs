@@ -1,9 +1,9 @@
 use downcast_rs::{impl_downcast, Downcast};
 use std::{
+    any::Any,
     fmt::{self, Debug},
     hash::Hash,
     panic::Location,
-    rc::Rc,
 };
 
 pub trait Data: Debug + Downcast {}
@@ -105,21 +105,20 @@ impl Debug for SlotId {
     }
 }
 
-#[derive(Clone)]
 pub struct Slot {
     pub id: SlotId,
     pub size: usize,
-    pub data: Rc<dyn Data>,
+    pub data: Box<dyn Data>,
 }
 
 impl Slot {
-    pub fn new<T>(call_id: impl Into<CallId>, data: &Rc<T>) -> Self
+    pub fn new<T>(call_id: impl Into<CallId>, data: Box<T>) -> Self
     where
         T: 'static + Data,
     {
         Slot {
             id: SlotId::new(call_id, None),
-            data: data.clone(),
+            data: data,
             size: 1,
         }
     }
@@ -127,7 +126,7 @@ impl Slot {
     pub fn placeholder(slot_id: SlotId) -> Self {
         Slot {
             id: slot_id,
-            data: Rc::new(PlaceHolder),
+            data: Box::new(PlaceHolder),
             size: 1,
         }
     }
