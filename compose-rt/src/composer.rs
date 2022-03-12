@@ -1,10 +1,13 @@
 use crate::{CallId, Slot, SlotId};
-use downcast_rs::Downcast;
 use log::trace;
-use std::{collections::HashMap, fmt::Debug, panic::Location, pin::Pin};
+use std::{any::Any, collections::HashMap, fmt::Debug, panic::Location, pin::Pin};
+
+pub trait ComposeNode {
+    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T>;
+}
 
 #[derive(Debug)]
-pub struct Composer<N: ?Sized + Unpin + Debug + Downcast> {
+pub struct Composer<N> {
     tape: Vec<Slot<Pin<Box<N>>>>,
     slot_depth: Vec<usize>,
     depth: usize,
@@ -15,7 +18,7 @@ pub struct Composer<N: ?Sized + Unpin + Debug + Downcast> {
 
 impl<N> Composer<N>
 where
-    N: ?Sized + Unpin + Debug + Downcast,
+    N: 'static + Any + Unpin + Debug + ComposeNode,
 {
     pub fn new(capacity: usize) -> Self {
         Composer {
@@ -31,7 +34,7 @@ where
 
 impl<N> Composer<N>
 where
-    N: ?Sized + Unpin + Debug + Downcast,
+    N: 'static + Any + Unpin + Debug + ComposeNode,
 {
     pub fn finalize(mut self) -> Composer<N> {
         self.tape.truncate(self.cursor);
@@ -74,7 +77,7 @@ where
         S: FnOnce(&mut Node) -> bool,
         A: FnOnce(&mut Node, Vec<&N>),
         U: FnOnce(&mut Node),
-        Node: Debug + Downcast + Unpin + Into<Box<N>>,
+        Node: Any + Debug + Unpin + Into<N>,
     {
         // remember current cursor
         let cursor = self.forward_cursor();
@@ -104,16 +107,16 @@ where
         }
 
         let cached = self.tape.get_mut(cursor).map(|s| {
-            let ptr = s.data.as_mut().expect("slot data").as_mut().get_mut();
             // `Composer` required to guarantee `content` function not able to access current slot in self.tape
             // Otherwise need to wrap self.tape with RefCell to remove this unsafe but come with cost
+            let ptr = s.data.as_mut().expect("slot data").as_mut().get_mut();
             let data = Box::leak(unsafe { Box::from_raw(ptr) });
             (s.id, s.size, data)
         });
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
-                if let Some(node) = p_data.as_any_mut().downcast_mut::<Node>() {
+                if let Some(node) = p_data.cast_mut::<Node>() {
                     trace!(
                         "{: >15} {} - {:?} - {:?}",
                         "get_cached",
@@ -159,7 +162,8 @@ where
             slot_id,
             node.type_id()
         );
-        let data = Pin::new(node.into());
+
+        let data = Box::pin(node.into());
         trace!(
             "{: >15} {} - {:?} - {:?}",
             "data",

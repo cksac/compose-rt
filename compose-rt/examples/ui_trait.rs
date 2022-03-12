@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use compose_rt::Composer;
+use compose_rt::{ComposeNode, Composer};
 use downcast_rs::{impl_downcast, Downcast};
 use fake::{Fake, Faker};
 use std::{
@@ -21,6 +21,12 @@ impl<T: 'static + Debug + Unpin> Node for T {}
 impl<T: 'static + Debug + Unpin> Into<Box<dyn Node>> for Rc<RefCell<T>> {
     fn into(self) -> Box<dyn Node> {
         Box::new(self)
+    }
+}
+
+impl ComposeNode for Box<dyn Node> {
+    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
+        self.downcast_mut::<T>()
     }
 }
 
@@ -67,7 +73,7 @@ impl RenderObject for RenderImage {}
 ////////////////////////////////////////////////////////////////////////////
 // Components
 ////////////////////////////////////////////////////////////////////////////
-type Context<'a> = &'a mut Composer<dyn Node>;
+type Context<'a> = &'a mut Composer<Box<dyn Node>>;
 
 #[track_caller]
 pub fn Column<C>(cx: Context, content: C)

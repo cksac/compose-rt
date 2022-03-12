@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use compose_rt::Composer;
+use compose_rt::{ComposeNode, Composer};
 use downcast_rs::{impl_downcast, Downcast};
 use fake::{Fake, Faker};
 use std::{
@@ -24,16 +24,16 @@ pub enum Node {
 
 macro_rules! into_boxed_node {
     ($ty:ident) => {
-        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
-            fn into(self) -> Box<Node> {
-                Box::new(Node::$ty(self))
+        impl Into<Node> for Rc<RefCell<$ty>> {
+            fn into(self) -> Node {
+                Node::$ty(self)
             }
         }
     };
     (dyn $ty:ident) => {
-        impl Into<Box<Node>> for Rc<RefCell<dyn $ty>> {
-            fn into(self) -> Box<Node> {
-                Box::new(Node::$ty(self))
+        impl Into<Node> for Rc<RefCell<dyn $ty>> {
+            fn into(self) -> Node {
+                Node::$ty(self)
             }
         }
     };
@@ -43,6 +43,17 @@ into_boxed_node!(RenderFlex);
 into_boxed_node!(RenderLabel);
 into_boxed_node!(RenderImage);
 into_boxed_node!(dyn RenderObject);
+
+impl ComposeNode for Node {
+    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
+        match self {
+            Node::RenderFlex(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderLabel(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderImage(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderObject(r) => r.as_any_mut().downcast_mut::<T>(),
+        }
+    }
+}
 
 pub trait RenderObject: Debug + Downcast + Unpin {}
 impl_downcast!(RenderObject);
@@ -96,17 +107,10 @@ where
             flex.children.clear();
             for child in children {
                 match child {
-                    Node::RenderFlex(c) => {
-                        flex.children.push(c.clone());
-                    }
-                    Node::RenderLabel(c) => {
-                        flex.children.push(c.clone());
-                    }
-                    Node::RenderImage(c) => {
-                        flex.children.push(c.clone());
-                    }
+                    Node::RenderFlex(c) => flex.children.push(c.clone()),
+                    Node::RenderLabel(c) => flex.children.push(c.clone()),
+                    Node::RenderImage(c) => flex.children.push(c.clone()),
                     Node::RenderObject(c) => flex.children.push(c.clone()),
-                    _ => {}
                 }
             }
         },
@@ -165,6 +169,7 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
             let n = n.borrow_mut();
             let ty_id = (*n).type_id();
 
+            // TODO: why n.as_any_mut().downcast_mut::<Rc<RefCell<RenderLabel>>>() not work?
             if ty_id == TypeId::of::<RenderLabel>() {
                 let mut label = RefMut::map(n, |x| x.downcast_mut::<RenderLabel>().unwrap());
                 label.0 = text.to_string();
