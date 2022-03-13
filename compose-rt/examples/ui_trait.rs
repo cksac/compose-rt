@@ -80,7 +80,7 @@ pub fn Column<C>(cx: Context, content: C)
 where
     C: Fn(Context),
 {
-    cx.group(
+    cx.group_use_children(
         |_| Rc::new(RefCell::new(RenderFlex::new())),
         |cx| content(cx),
         |node, children| {
@@ -109,10 +109,8 @@ where
 #[track_caller]
 pub fn Text(cx: Context, text: impl AsRef<str>) {
     let text = text.as_ref();
-    cx.group(
+    cx.memo(
         |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
-        |_| {},
-        |_, _| {},
         |n| n.borrow().0 == text,
         |n| {
             let mut n = n.borrow_mut();
@@ -124,10 +122,8 @@ pub fn Text(cx: Context, text: impl AsRef<str>) {
 #[track_caller]
 pub fn Image(cx: Context, url: impl AsRef<str>) {
     let url = url.as_ref();
-    cx.group(
+    cx.memo(
         |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
-        |_| {},
-        |_, _| {},
         |n| n.borrow().0 == url,
         |n| {
             let mut n = n.borrow_mut();
@@ -139,7 +135,7 @@ pub fn Image(cx: Context, url: impl AsRef<str>) {
 #[track_caller]
 pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
     let t = text.as_ref();
-    cx.group(
+    cx.memo(
         |_| {
             let obj: Rc<RefCell<dyn RenderObject>> = if Faker.fake::<bool>() {
                 let url = format!("http://image.com/{}.png", t);
@@ -149,8 +145,6 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
             };
             obj
         },
-        |_| {},
-        |_, _| {},
         |_| false,
         |n| {
             let n = n.borrow_mut();

@@ -68,11 +68,56 @@ where
     }
 
     #[track_caller]
-    pub fn group<F, C, S, A, U, Node>(
+    pub fn memo<F, S, U, Node>(&mut self, factory: F, skip: S, update: U)
+    where
+        F: FnOnce(&mut Composer<N>) -> Node,
+        S: FnOnce(&mut Node) -> bool,
+        U: FnOnce(&mut Node),
+        Node: Any + Debug + Unpin + Into<Box<N>>,
+    {
+        self.slot(factory, false, |_| {}, false, |_, _| {}, skip, update);
+    }
+
+    #[track_caller]
+    pub fn group_use_children<F, C, S, A, U, Node>(
         &mut self,
         factory: F,
-        content: C,
-        apply: A,
+        children: C,
+        apply_children: A,
+        skip: S,
+        update: U,
+    ) where
+        F: FnOnce(&mut Composer<N>) -> Node,
+        C: FnOnce(&mut Composer<N>),
+        S: FnOnce(&mut Node) -> bool,
+        A: FnOnce(&mut Node, Vec<&N>),
+        U: FnOnce(&mut Node),
+        Node: Any + Debug + Unpin + Into<Box<N>>,
+    {
+        self.slot(factory, true, children, true, apply_children, skip, update);
+    }
+
+    #[track_caller]
+    pub fn group<F, C, S, A, U, Node>(&mut self, factory: F, children: C, skip: S, update: U)
+    where
+        F: FnOnce(&mut Composer<N>) -> Node,
+        C: FnOnce(&mut Composer<N>),
+        S: FnOnce(&mut Node) -> bool,
+        A: FnOnce(&mut Node, Vec<&N>),
+        U: FnOnce(&mut Node),
+        Node: Any + Debug + Unpin + Into<Box<N>>,
+    {
+        self.slot(factory, true, children, false, |_, _| {}, skip, update);
+    }
+
+    #[track_caller]
+    pub fn slot<F, C, S, A, U, Node>(
+        &mut self,
+        factory: F,
+        has_children: bool,
+        children: C,
+        use_children: bool,
+        apply_children: A,
         skip: S,
         update: U,
     ) where
@@ -130,13 +175,17 @@ where
                     );
                     if skip(node) {
                         trace!("{: >15} {} - {:?}", "skip_group", cursor, slot_id);
-                        self.skip_group(cursor, p_size);
+                        self.skip_slot(cursor, p_size);
                     } else {
-                        content(self);
-                        let children = self.children_of_slot_at(cursor);
-                        apply(node, children);
+                        if has_children {
+                            children(self);
+                            if use_children {
+                                let c = self.children_of_slot_at(cursor);
+                                apply_children(node, c);
+                            }
+                        }
                         update(node);
-                        self.end_update(cursor);
+                        self.end_slot_update(cursor);
                     }
                 } else {
                     trace!(
@@ -153,11 +202,17 @@ where
             self.recycle_slot(cursor, p_slot_id, p_size);
         }
 
-        self.begin_group(cursor, slot_id);
+        self.begin_slot(cursor, slot_id);
         let mut node = factory(self);
-        content(self);
-        let children = self.children_of_slot_at(cursor);
-        apply(&mut node, children);
+
+        if has_children {
+            children(self);
+
+            if use_children {
+                let c = self.children_of_slot_at(cursor);
+                apply_children(&mut node, c);
+            }
+        }
 
         trace!(
             "{: >15} {} - {:?} - {:?}",
@@ -176,7 +231,7 @@ where
             data.type_id()
         );
 
-        self.end_group(cursor, data);
+        self.end_slot(cursor, data);
     }
 
     fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&N> {
@@ -201,13 +256,13 @@ where
         children
     }
 
-    fn begin_group(&mut self, cursor: usize, slot_id: SlotId) {
+    fn begin_slot(&mut self, cursor: usize, slot_id: SlotId) {
         let slot = Slot::placeholder(slot_id);
         self.tape.insert(cursor, slot);
         trace!("{: >15} {} - {:?}", "begin_group", cursor, slot_id);
     }
 
-    fn end_group(&mut self, cursor: usize, data: Pin<Box<N>>) {
+    fn end_slot(&mut self, cursor: usize, data: Pin<Box<N>>) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {
@@ -217,7 +272,7 @@ where
         }
     }
 
-    fn end_update(&mut self, cursor: usize) {
+    fn end_slot_update(&mut self, cursor: usize) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {
@@ -232,7 +287,7 @@ where
         }
     }
 
-    fn skip_group(&mut self, cursor: usize, size: usize) {
+    fn skip_slot(&mut self, cursor: usize, size: usize) {
         self.depth -= 1;
         trace!(
             "{: >15} {} - {} - {}",
