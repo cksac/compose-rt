@@ -59,11 +59,18 @@ fn main() {
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
     root_fn(&mut cx, &movies);
-    println!("{:#?}", cx);
 
-    // reset composer cursor, etc. for recompose
-    cx = cx.finalize();
+    // end compose, Recomposer allow you to access root
+    let mut recomposer = cx.finalize();
+    if let Some(mut root) = recomposer.root_mut() {
+        if let Some(render_obj) = root.cast_mut::<Rc<RefCell<RenderFlex>>>() {
+            // call paint of render tree
+            let mut context = PaintContext::new();
+            render_obj.borrow().paint(&mut context);
+        }
+    }
 
+    cx = recomposer.compose();
     // rerun with new input
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
@@ -71,7 +78,16 @@ fn main() {
         Movie::new(2, "B", "IMG_B"),
     ];
     root_fn(&mut cx, &movies);
-    println!("{:#?}", cx);
+
+    // end compose, Recomposer allow you to access root
+    let mut recomposer = cx.finalize();
+    if let Some(mut root) = recomposer.root_mut() {
+        if let Some(render_obj) = root.cast_mut::<Rc<RefCell<RenderFlex>>>() {
+            // call paint of render tree
+            let mut context = PaintContext::new();
+            render_obj.borrow().paint(&mut context);
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -206,20 +222,23 @@ impl<'a> ComposeNode for &'a mut Node {
     }
 }
 
-pub trait RenderObject: Debug + Downcast + Unpin {}
-impl_downcast!(RenderObject);
-
-pub struct RenderFlex {
-    children: Vec<Rc<RefCell<dyn RenderObject>>>,
+pub struct PaintContext {
+    depth: usize,
+}
+impl PaintContext {
+    pub fn new() -> Self {
+        Self { depth: 0 }
+    }
 }
 
-impl Debug for RenderFlex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // trim debug print
-        f.debug_struct("RenderFlex")
-            .field("children_count", &self.children.len())
-            .finish()
-    }
+pub trait RenderObject: Debug + Downcast {
+    fn paint(&self, context: &mut PaintContext);
+}
+impl_downcast!(RenderObject);
+
+#[derive(Debug)]
+pub struct RenderFlex {
+    children: Vec<Rc<RefCell<dyn RenderObject>>>,
 }
 
 impl RenderFlex {
@@ -230,12 +249,34 @@ impl RenderFlex {
     }
 }
 
-impl RenderObject for RenderFlex {}
+impl RenderObject for RenderFlex {
+    fn paint(&self, context: &mut PaintContext) {
+        println!(
+            "{}<flex size={}>",
+            "\t".repeat(context.depth),
+            self.children.len()
+        );
+        context.depth += 1;
+        for child in &self.children {
+            child.borrow().paint(context);
+        }
+        context.depth -= 1;
+        println!("{}<flex>", "\t".repeat(context.depth));
+    }
+}
 
 #[derive(Debug)]
 pub struct RenderLabel(String);
-impl RenderObject for RenderLabel {}
+impl RenderObject for RenderLabel {
+    fn paint(&self, context: &mut PaintContext) {
+        println!("{}<label>{}</label>", "\t".repeat(context.depth), self.0);
+    }
+}
 
 #[derive(Debug)]
 pub struct RenderImage(String);
-impl RenderObject for RenderImage {}
+impl RenderObject for RenderImage {
+    fn paint(&self, context: &mut PaintContext) {
+        println!("{}<img src={}/>", "\t".repeat(context.depth), self.0);
+    }
+}

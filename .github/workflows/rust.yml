@@ -1,0 +1,21 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --verbose
+    - name: Run ui_trait example
+      run: cargo run --example ui_trait
+    - name: Run ui_enum example
+      run: cargo run --example ui_enum
