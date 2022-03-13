@@ -45,9 +45,9 @@ impl Movie {
 }
 
 #[track_caller]
-pub fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
+pub fn MoviesScreen(cx: Context, movies: &Vec<Movie>) {
     Column(cx, |cx| {
-        for movie in &movies {
+        for movie in movies {
             cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
         }
     })
@@ -75,7 +75,7 @@ fn main() {
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(&mut cx, movies);
+    root_fn(&mut cx, &movies);
     println!("{:#?}", cx);
 
     // reset composer cursor, etc. for recompose
@@ -87,7 +87,7 @@ fn main() {
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(&mut cx, movies);
+    root_fn(&mut cx, &movies);
     println!("{:#?}", cx);
 }
 
