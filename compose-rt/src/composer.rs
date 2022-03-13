@@ -20,7 +20,7 @@ pub struct Composer<N: ?Sized> {
 
 impl<N> Composer<N>
 where
-    N: 'static + ?Sized + Any + Unpin + Debug,
+    N: 'static + ?Sized + Any + Unpin,
     for<'a> &'a mut N: ComposeNode,
 {
     pub fn new(capacity: usize) -> Self {
@@ -37,7 +37,7 @@ where
 
 impl<N> Composer<N>
 where
-    N: 'static + ?Sized + Any + Unpin + Debug,
+    N: 'static + ?Sized + Any + Unpin,
     for<'a> &'a mut N: ComposeNode,
 {
     pub fn finalize(mut self) -> Composer<N> {

@@ -169,19 +169,21 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend - Not scope of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-pub trait Node: Debug + Downcast + Unpin {}
+pub trait Node: Debug + Downcast + Unpin {
+    fn debug_print(&self) {}
+}
 impl_downcast!(Node);
 
-impl<T: 'static + Debug + Unpin> Node for T {}
+impl<T: 'static + Unpin + Debug> Node for T {}
 
-impl<T: 'static + Debug + Unpin> Into<Box<dyn Node>> for Rc<RefCell<T>> {
+impl<T: 'static + Unpin + Debug> Into<Box<dyn Node>> for Rc<RefCell<T>> {
     fn into(self) -> Box<dyn Node> {
         Box::new(self)
     }
 }
 
 impl<'a> ComposeNode for &'a mut dyn Node {
-    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
+    fn cast_mut<T: 'static + Debug + Unpin>(&mut self) -> Option<&mut T> {
         self.downcast_mut::<T>()
     }
 }
