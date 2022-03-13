@@ -43,6 +43,10 @@ fn MovieOverview(cx: Context, movie: &Movie) {
         Text(cx, &movie.name);
         Image(cx, &movie.img_url);
         RandomRenderObject(cx, Faker.fake::<String>());
+
+        let count = cx.state(Rc::new(RefCell::new(0usize)));
+        Text(cx, format!("compose count {}", count.borrow()));
+        *count.borrow_mut() += 1;
     })
 }
 fn main() {
@@ -112,6 +116,7 @@ where
                     Node::RenderLabel(c) => flex.children.push(c.clone()),
                     Node::RenderImage(c) => flex.children.push(c.clone()),
                     Node::RenderObject(c) => flex.children.push(c.clone()),
+                    _ => {}
                 }
             }
         },
@@ -187,7 +192,12 @@ pub enum Node {
     RenderLabel(Rc<RefCell<RenderLabel>>),
     RenderImage(Rc<RefCell<RenderImage>>),
     RenderObject(Rc<RefCell<dyn RenderObject>>),
+    State(Rc<RefCell<dyn State>>),
 }
+
+pub trait State: Downcast + Debug {}
+impl_downcast!(State);
+impl State for usize {}
 
 macro_rules! into_boxed_node {
     ($ty:ident) => {
@@ -204,12 +214,26 @@ macro_rules! into_boxed_node {
             }
         }
     };
+    (state $ty:ident) => {
+        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::State(self))
+            }
+        }
+    };
 }
 
 into_boxed_node!(RenderFlex);
 into_boxed_node!(RenderLabel);
 into_boxed_node!(RenderImage);
 into_boxed_node!(dyn RenderObject);
+into_boxed_node!(dyn State);
+
+impl<T: State> Into<Box<Node>> for Rc<RefCell<T>> {
+    fn into(self) -> Box<Node> {
+        Box::new(Node::State(self))
+    }
+}
 
 impl<'a> ComposeNode for &'a mut Node {
     fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
@@ -218,6 +242,11 @@ impl<'a> ComposeNode for &'a mut Node {
             Node::RenderLabel(r) => r.as_any_mut().downcast_mut::<T>(),
             Node::RenderImage(r) => r.as_any_mut().downcast_mut::<T>(),
             Node::RenderObject(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::State(s) => {                
+                println!("TODO: fix downcast fail, {:?}", s);
+                s.as_any_mut().downcast_mut::<T>()
+            },
+            _ => todo!(),
         }
     }
 }
