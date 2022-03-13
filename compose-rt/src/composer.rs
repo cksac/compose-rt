@@ -58,13 +58,13 @@ where
     }
 
     #[track_caller]
-    pub fn tag<F, T>(&mut self, key: usize, func: F) -> T
+    pub fn tag<F>(&mut self, key: usize, func: F)
     where
-        F: FnOnce(&mut Composer<N>) -> T,
+        F: FnOnce(&mut Composer<N>),
     {
         // set the key of first encountered group
         self.slot_key = Some(key);
-        func(self)
+        func(self);
     }
 
     #[track_caller]
