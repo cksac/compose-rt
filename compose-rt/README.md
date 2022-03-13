@@ -2,6 +2,7 @@
 A positional memoization runtime similar to Jetpack Compose Runtime. 
 
 # example
+Below example show how to build a declarative GUI using compose-rt
 
 ```toml
 [dependencies]
@@ -91,7 +92,7 @@ fn main() {
 }
 
 ////////////////////////////////////////////////////////////////////////////
-// Components
+// Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
 type Context<'a> = &'a mut Composer<dyn Node>;
 
@@ -183,7 +184,7 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
 
 
 ////////////////////////////////////////////////////////////////////////////
-// Rendering backend
+// Rendering backend - Not scope of compose-rt
 ////////////////////////////////////////////////////////////////////////////
 pub trait Node: Debug + Downcast + Unpin {}
 impl_downcast!(Node);

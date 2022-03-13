@@ -11,86 +11,71 @@ use std::{
 };
 
 ////////////////////////////////////////////////////////////////////////////
-// Rendering backend
+// User application
 ////////////////////////////////////////////////////////////////////////////
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum Node {
-    RenderFlex(Rc<RefCell<RenderFlex>>),
-    RenderLabel(Rc<RefCell<RenderLabel>>),
-    RenderImage(Rc<RefCell<RenderImage>>),
-    RenderObject(Rc<RefCell<dyn RenderObject>>),
+pub struct Movie {
+    id: usize,
+    name: String,
+    img_url: String,
 }
-
-macro_rules! into_boxed_node {
-    ($ty:ident) => {
-        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
-            fn into(self) -> Box<Node> {
-                Box::new(Node::$ty(self))
-            }
-        }
-    };
-    (dyn $ty:ident) => {
-        impl Into<Box<Node>> for Rc<RefCell<dyn $ty>> {
-            fn into(self) -> Box<Node> {
-                Box::new(Node::$ty(self))
-            }
-        }
-    };
-}
-
-into_boxed_node!(RenderFlex);
-into_boxed_node!(RenderLabel);
-into_boxed_node!(RenderImage);
-into_boxed_node!(dyn RenderObject);
-
-impl<'a> ComposeNode for &'a mut Node {
-    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
-        match self {
-            Node::RenderFlex(r) => r.as_any_mut().downcast_mut::<T>(),
-            Node::RenderLabel(r) => r.as_any_mut().downcast_mut::<T>(),
-            Node::RenderImage(r) => r.as_any_mut().downcast_mut::<T>(),
-            Node::RenderObject(r) => r.as_any_mut().downcast_mut::<T>(),
+impl Movie {
+    pub fn new(id: usize, name: impl Into<String>, img_url: impl Into<String>) -> Self {
+        Movie {
+            id,
+            name: name.into(),
+            img_url: img_url.into(),
         }
     }
 }
 
-pub trait RenderObject: Debug + Downcast + Unpin {}
-impl_downcast!(RenderObject);
-
-pub struct RenderFlex {
-    children: Vec<Rc<RefCell<dyn RenderObject>>>,
-}
-
-impl Debug for RenderFlex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // trim debug print
-        f.debug_struct("RenderFlex")
-            .field("children_count", &self.children.len())
-            .finish()
-    }
-}
-
-impl RenderFlex {
-    pub fn new() -> Self {
-        RenderFlex {
-            children: Vec::new(),
+#[track_caller]
+fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
+    Column(cx, |cx| {
+        for movie in &movies {
+            cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
         }
-    }
+    })
 }
 
-impl RenderObject for RenderFlex {}
+#[track_caller]
+fn MovieOverview(cx: Context, movie: &Movie) {
+    Column(cx, |cx| {
+        Text(cx, &movie.name);
+        Image(cx, &movie.img_url);
+        RandomRenderObject(cx, Faker.fake::<String>());
+    })
+}
+fn main() {
+    // Setup logging
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Trace)
+        .init();
 
-#[derive(Debug)]
-pub struct RenderLabel(String);
-impl RenderObject for RenderLabel {}
+    // define root compose
+    let root_fn = |cx: Context, movies| MoviesScreen(cx, movies);
 
-#[derive(Debug)]
-pub struct RenderImage(String);
-impl RenderObject for RenderImage {}
+    let mut cx = Composer::new(10);
+
+    // first run
+    let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
+    root_fn(&mut cx, movies);
+    println!("{:#?}", cx);
+
+    // reset composer cursor, etc. for recompose
+    cx = cx.finalize();
+
+    // rerun with new input
+    let movies = vec![
+        Movie::new(1, "AA", "IMG_AA"),
+        Movie::new(3, "C", "IMG_C"),
+        Movie::new(2, "B", "IMG_B"),
+    ];
+    root_fn(&mut cx, movies);
+    println!("{:#?}", cx);
+}
 
 ////////////////////////////////////////////////////////////////////////////
-// Components
+// Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
 type Context<'a> = &'a mut Composer<Node>;
 
@@ -176,66 +161,83 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
     );
 }
 
+
+
 ////////////////////////////////////////////////////////////////////////////
-// User application
+// Rendering backend - Not scope of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-pub struct Movie {
-    id: usize,
-    name: String,
-    img_url: String,
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Node {
+    RenderFlex(Rc<RefCell<RenderFlex>>),
+    RenderLabel(Rc<RefCell<RenderLabel>>),
+    RenderImage(Rc<RefCell<RenderImage>>),
+    RenderObject(Rc<RefCell<dyn RenderObject>>),
 }
-impl Movie {
-    pub fn new(id: usize, name: impl Into<String>, img_url: impl Into<String>) -> Self {
-        Movie {
-            id,
-            name: name.into(),
-            img_url: img_url.into(),
+
+macro_rules! into_boxed_node {
+    ($ty:ident) => {
+        impl Into<Box<Node>> for Rc<RefCell<$ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
+            }
+        }
+    };
+    (dyn $ty:ident) => {
+        impl Into<Box<Node>> for Rc<RefCell<dyn $ty>> {
+            fn into(self) -> Box<Node> {
+                Box::new(Node::$ty(self))
+            }
+        }
+    };
+}
+
+into_boxed_node!(RenderFlex);
+into_boxed_node!(RenderLabel);
+into_boxed_node!(RenderImage);
+into_boxed_node!(dyn RenderObject);
+
+impl<'a> ComposeNode for &'a mut Node {
+    fn cast_mut<T: 'static + Unpin + Debug>(&mut self) -> Option<&mut T> {
+        match self {
+            Node::RenderFlex(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderLabel(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderImage(r) => r.as_any_mut().downcast_mut::<T>(),
+            Node::RenderObject(r) => r.as_any_mut().downcast_mut::<T>(),
         }
     }
 }
 
-#[track_caller]
-fn MoviesScreen(cx: Context, movies: Vec<Movie>) {
-    Column(cx, |cx| {
-        for movie in &movies {
-            cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
+pub trait RenderObject: Debug + Downcast + Unpin {}
+impl_downcast!(RenderObject);
+
+pub struct RenderFlex {
+    children: Vec<Rc<RefCell<dyn RenderObject>>>,
+}
+
+impl Debug for RenderFlex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // trim debug print
+        f.debug_struct("RenderFlex")
+            .field("children_count", &self.children.len())
+            .finish()
+    }
+}
+
+impl RenderFlex {
+    pub fn new() -> Self {
+        RenderFlex {
+            children: Vec::new(),
         }
-    })
+    }
 }
 
-#[track_caller]
-fn MovieOverview(cx: Context, movie: &Movie) {
-    Column(cx, |cx| {
-        Text(cx, &movie.name);
-        Image(cx, &movie.img_url);
-        RandomRenderObject(cx, Faker.fake::<String>());
-    })
-}
-fn main() {
-    // Setup logging
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Trace)
-        .init();
+impl RenderObject for RenderFlex {}
 
-    // define root compose
-    let root_fn = |cx: Context, movies| MoviesScreen(cx, movies);
+#[derive(Debug)]
+pub struct RenderLabel(String);
+impl RenderObject for RenderLabel {}
 
-    let mut cx = Composer::new(10);
-
-    // first run
-    let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(&mut cx, movies);
-    println!("{:#?}", cx);
-
-    // reset composer cursor, etc. for recompose
-    cx = cx.finalize();
-
-    // rerun with new input
-    let movies = vec![
-        Movie::new(1, "AA", "IMG_AA"),
-        Movie::new(3, "C", "IMG_C"),
-        Movie::new(2, "B", "IMG_B"),
-    ];
-    root_fn(&mut cx, movies);
-    println!("{:#?}", cx);
-}
+#[derive(Debug)]
+pub struct RenderImage(String);
+impl RenderObject for RenderImage {}
