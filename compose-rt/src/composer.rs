@@ -174,7 +174,7 @@ where
                         node
                     );
                     if skip(node) {
-                        trace!("{: >15} {} - {:?}", "skip_group", cursor, slot_id);
+                        trace!("{: >15} {} - {:?}", "skip_slot", cursor, slot_id);
                         self.skip_slot(cursor, p_size);
                     } else {
                         if has_children {
@@ -214,23 +214,7 @@ where
             }
         }
 
-        trace!(
-            "{: >15} {} - {:?} - {:?}",
-            "node",
-            cursor,
-            slot_id,
-            node.type_id()
-        );
-
         let data = Pin::new(node.into());
-        trace!(
-            "{: >15} {} - {:?} - {:?}",
-            "data",
-            cursor,
-            slot_id,
-            data.type_id()
-        );
-
         self.end_slot(cursor, data);
     }
 
@@ -259,7 +243,7 @@ where
     fn begin_slot(&mut self, cursor: usize, slot_id: SlotId) {
         let slot = Slot::placeholder(slot_id);
         self.tape.insert(cursor, slot);
-        trace!("{: >15} {} - {:?}", "begin_group", cursor, slot_id);
+        trace!("{: >15} {} - {:?}", "begin_slot", cursor, slot_id);
     }
 
     fn end_slot(&mut self, cursor: usize, data: Pin<Box<N>>) {
@@ -268,7 +252,7 @@ where
         if let Some(slot) = self.tape.get_mut(cursor) {
             slot.data = Some(data);
             slot.size = curr_cursor - cursor;
-            trace!("{: >15} {} - {:?}", "end_group", cursor, slot.id);
+            trace!("{: >15} {} - {:?}", "end_slot", cursor, slot.id);
         }
     }
 
@@ -277,13 +261,7 @@ where
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {
             slot.size = curr_cursor - cursor;
-            trace!(
-                "{: >15} {} - {:?} - {:?}",
-                "end_update",
-                cursor,
-                slot.id,
-                slot.data.as_ref().unwrap()
-            );
+            trace!("{: >15} {} - {:?}", "end_slot_update", cursor, slot.id);
         }
     }
 
@@ -291,7 +269,7 @@ where
         self.depth -= 1;
         trace!(
             "{: >15} {} - {} - {}",
-            "skip_group",
+            "skip_slot",
             cursor,
             size,
             self.cursor
