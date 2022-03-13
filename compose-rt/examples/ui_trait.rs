@@ -42,7 +42,11 @@ pub fn MovieOverview(cx: Context, movie: &Movie) {
     Column(cx, |cx| {
         Text(cx, &movie.name);
         Image(cx, &movie.img_url);
-        RandomRenderObject(cx, &movie.name)
+        RandomRenderObject(cx, &movie.name);
+
+        let count = cx.state(Rc::new(RefCell::new(0usize)));
+        Text(cx, format!("compose count {}", count.borrow()));
+        *count.borrow_mut() += 1;
     })
 }
 
