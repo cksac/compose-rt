@@ -166,15 +166,15 @@ where
         if let Some((p_slot_id, p_size, mut p_data)) = cached {
             if slot_id == p_slot_id {
                 if let Some(node) = p_data.cast_mut::<Node>() {
-                    trace!(
-                        "{: >15} {} - {:?} - {:?}",
-                        "get_cached",
-                        cursor,
-                        slot_id,
-                        node
-                    );
+                    trace!("{: >15} {} - {:?}", "get_cached", cursor, slot_id,);
                     if skip(node) {
-                        trace!("{: >15} {} - {:?}", "skip_slot", cursor, slot_id);
+                        trace!(
+                            "{: >15} {} - {:?} - {}",
+                            "skip_slot",
+                            cursor,
+                            slot_id,
+                            p_size
+                        );
                         self.skip_slot(cursor, p_size);
                     } else {
                         if has_children {
@@ -267,13 +267,6 @@ where
 
     fn skip_slot(&mut self, cursor: usize, size: usize) {
         self.depth -= 1;
-        trace!(
-            "{: >15} {} - {} - {}",
-            "skip_slot",
-            cursor,
-            size,
-            self.cursor
-        );
         self.cursor = cursor + size;
     }
 
