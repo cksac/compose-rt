@@ -189,17 +189,13 @@ pub fn RandomRenderObject(cx: &mut Composer, text: impl AsRef<str>) {
         },
         |_| false,
         |n| {
-            let n = n.borrow_mut();
-            let ty_id = (*n).type_id();
-
-            if ty_id == TypeId::of::<RenderLabel>() {
-                let mut label = RefMut::map(n, |x| x.downcast_mut::<RenderLabel>().unwrap());
+            if let Some(label) = n.borrow_mut().downcast_mut::<RenderLabel>() {
                 label.0 = t.to_string();
-            } else if ty_id == TypeId::of::<RenderImage>() {
-                let mut img = RefMut::map(n, |x| x.downcast_mut::<RenderImage>().unwrap());
+            }
+            if let Some(img) = n.borrow_mut().downcast_mut::<RenderImage>() {
                 let url = format!("http://image.com/{}.png", t);
                 img.0 = url;
-            };
+            }
         },
         |_| {},
     );
