@@ -1,7 +1,7 @@
 use darling::FromMeta;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ItemFn, NestedMeta};
+use syn::{ItemFn};
 
 #[derive(Debug, FromMeta)]
 pub struct MacroArgs {
@@ -9,26 +9,20 @@ pub struct MacroArgs {
     skip_inject_cx: bool,
 }
 
+pub fn transform_compose_fn(macro_args: MacroArgs, func: ItemFn) -> TokenStream {
+    let fn_args = &func.sig.inputs;
 
-pub fn transform_compose_fn(attr: Vec<NestedMeta>, f: ItemFn) -> TokenStream {
-    let fn_args = &f.sig.inputs;
-
-    let macro_args = match MacroArgs::from_list(&attr) {
-        Ok(v) => v,
-        Err(e) => { return TokenStream::from(e.write_errors()); }
-    };
-
-    let compose_fn = if macro_args.skip_inject_cx {
+    if macro_args.skip_inject_cx {
         quote! {
             #[track_caller]
-            #f
+            #func
         }
     } else {
-        let fn_name = &f.sig.ident;
-        let fn_generics = &f.sig.generics.params;
-        let fn_return = &f.sig.output;
-        let fn_where = &f.sig.generics.where_clause;
-        let fn_block = &f.block;
+        let fn_name = &func.sig.ident;
+        let fn_generics = &func.sig.generics.params;
+        let fn_return = &func.sig.output;
+        let fn_where = &func.sig.generics.where_clause;
+        let fn_block = &func.block;
 
         quote! {
             #[track_caller]
@@ -36,7 +30,5 @@ pub fn transform_compose_fn(attr: Vec<NestedMeta>, f: ItemFn) -> TokenStream {
             #fn_where 
             #fn_block
         }
-    };
-
-    compose_fn
+    }
 }

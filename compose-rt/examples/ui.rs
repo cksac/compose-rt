@@ -94,7 +94,7 @@ fn main() {
 ////////////////////////////////////////////////////////////////////////////
 // Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Column<C>(cx: &mut Composer, content: C)
 where
     C: Fn(&mut Composer),
@@ -126,7 +126,7 @@ where
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.memo(
@@ -140,7 +140,7 @@ pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.memo(
@@ -154,7 +154,7 @@ pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn RandomRenderObject(cx: &mut Composer, text: impl AsRef<str>) {
     let t = text.as_ref();
     cx.memo(
