@@ -11,7 +11,7 @@ pub fn MoviesScreen(movies: &Vec<Movie>) {
     });
 }
 
-// will become after expand
+// after expand
 #[track_caller]
 pub fn MoviesScreen(cx: &mut compose_rt::Composer, movies: &Vec<Movie>) {
     Column(cx, |cx| {
