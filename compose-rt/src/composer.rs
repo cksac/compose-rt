@@ -118,7 +118,7 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn group<F, Node, C, S, A, U, O, Output>(
+    pub fn group<F, Node, C, S, U, O, Output>(
         &mut self,
         factory: F,
         children: C,
@@ -131,7 +131,6 @@ impl Composer {
         Node: ComposeNode,
         C: FnOnce(&mut Composer),
         S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
