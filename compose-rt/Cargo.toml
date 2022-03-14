@@ -1,6 +1,6 @@
 [package]
 name = "compose-rt"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["cksac <cs.cksac@gmail.com>"]
 description = "A positional memoization runtime similar to Jetpack Compose Runtime."
@@ -12,9 +12,11 @@ repository = "https://github.com/cksac/compose-rt"
 homepage = "https://github.com/cksac/compose-rt"
 
 [dependencies]
+compose-derive = { path = '../compose-derive' }
 log = "0.4"
+downcast-rs = "1.2"
+
 
 [dev-dependencies]
-downcast-rs = "1.2.0"
 env_logger = "0.6"
 fake = "2.4"

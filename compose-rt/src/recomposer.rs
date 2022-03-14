@@ -1,23 +1,27 @@
-use crate::{ComposeNode, Composer};
-use std::any::Any;
+use crate::Composer;
 
-pub struct Recomposer<N: ?Sized> {
-    pub(crate) composer: Composer<N>,
+pub struct Recomposer {
+    pub(crate) composer: Composer,
 }
 
-impl<N> Recomposer<N>
-where
-    N: 'static + ?Sized + Any + Unpin,
-    for<'a> &'a mut N: ComposeNode,
-{
-    pub fn root_mut(&mut self) -> Option<&mut N> {
+impl Recomposer {
+    pub fn root<R: 'static>(&self) -> Option<&R> {
+        self.composer
+            .tape
+            .get(0)
+            .and_then(|s| s.data.as_ref().map(|d| d.as_ref().get_ref()))
+            .and_then(|n| n.as_any().downcast_ref::<R>())
+    }
+
+    pub fn root_mut<R: 'static>(&mut self) -> Option<&mut R> {
         self.composer
             .tape
             .get_mut(0)
             .and_then(|s| s.data.as_mut().map(|d| d.as_mut().get_mut()))
+            .and_then(|n| n.as_any_mut().downcast_mut::<R>())
     }
 
-    pub fn compose(self) -> Composer<N> {
+    pub fn compose(self) -> Composer {
         self.composer
     }
 }

@@ -10,8 +10,8 @@ Below example show how to build a declarative GUI using compose-rt
 
 ```toml
 [dependencies]
-compose-rt = "0.3"
-downcast-rs = "1.2.0"
+compose-rt = "0.4"
+downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
 fake = "2.4"
@@ -20,8 +20,8 @@ fake = "2.4"
 ```rust
 #![allow(non_snake_case)]
 
-use compose_rt::{ComposeNode, Composer};
-use downcast_rs::{impl_downcast, Downcast};
+use compose_rt::{compose, ComposeNode, Composer};
+use downcast_rs::impl_downcast;
 use fake::{Fake, Faker};
 use std::{
     any::TypeId,
@@ -48,26 +48,26 @@ impl Movie {
     }
 }
 
-#[track_caller]
-pub fn MoviesScreen(cx: Context, movies: &Vec<Movie>) {
+#[compose]
+pub fn MoviesScreen(movies: &Vec<Movie>) {
     Column(cx, |cx| {
         for movie in movies {
-            cx.tag(movie.id, |cx| MovieOverview(cx, &movie))
+            cx.tag(movie.id, |cx| MovieOverview(cx, &movie));
         }
-    })
+    });
 }
 
-#[track_caller]
-pub fn MovieOverview(cx: Context, movie: &Movie) {
+#[compose]
+pub fn MovieOverview(movie: &Movie) {
     Column(cx, |cx| {
         Text(cx, &movie.name);
         Image(cx, &movie.img_url);
-        RandomRenderObject(cx, &movie.name)
+        RandomRenderObject(cx, &movie.name);
 
         let count = cx.state(Rc::new(RefCell::new(0usize)));
         Text(cx, format!("compose count {}", count.borrow()));
-        *count.borrow_mut() += 1;        
-    })
+        *count.borrow_mut() += 1;
+    });
 }
 
 fn main() {
@@ -77,7 +77,7 @@ fn main() {
         .init();
 
     // define root compose
-    let root_fn = |cx: Context, movies| MoviesScreen(cx, movies);
+    let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
 
     let mut cx = Composer::new(10);
 
@@ -86,13 +86,11 @@ fn main() {
     root_fn(&mut cx, &movies);
 
     // end compose, Recomposer allow you to access root
-    let mut recomposer = cx.finalize();
-    if let Some(mut root) = recomposer.root_mut() {
-        if let Some(render_obj) = root.cast_mut::<Rc<RefCell<RenderFlex>>>() {
-            // call paint of render tree
-            let mut context = PaintContext::new();
-            render_obj.borrow().paint(&mut context);
-        }
+    let recomposer = cx.finalize();
+    if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
+        // call paint of render tree
+        let mut context = PaintContext::new();
+        root.borrow().paint(&mut context);
     }
 
     cx = recomposer.compose();
@@ -104,26 +102,22 @@ fn main() {
     ];
     root_fn(&mut cx, &movies);
 
+    let recomposer = cx.finalize();
     // end compose, Recomposer allow you to access root
-    let mut recomposer = cx.finalize();
-    if let Some(mut root) = recomposer.root_mut() {
-        if let Some(render_obj) = root.cast_mut::<Rc<RefCell<RenderFlex>>>() {
-            // call paint of render tree
-            let mut context = PaintContext::new();
-            render_obj.borrow().paint(&mut context);
-        }
+    if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
+        // call paint of render tree
+        let mut context = PaintContext::new();
+        root.borrow().paint(&mut context);
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////
 // Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-type Context<'a> = &'a mut Composer<dyn Node>;
-
-#[track_caller]
-pub fn Column<C>(cx: Context, content: C)
+#[compose(skip_inject_cx=true)]
+pub fn Column<C>(cx: &mut Composer, content: C)
 where
-    C: Fn(Context),
+    C: Fn(&mut Composer),
 {
     cx.group_use_children(
         |_| Rc::new(RefCell::new(RenderFlex::new())),
@@ -148,11 +142,12 @@ where
         },
         |_| false,
         |_| {},
+        |_| {},
     );
 }
 
-#[track_caller]
-pub fn Text(cx: Context, text: impl AsRef<str>) {
+#[compose(skip_inject_cx=true)]
+pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.memo(
         |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
@@ -161,11 +156,12 @@ pub fn Text(cx: Context, text: impl AsRef<str>) {
             let mut n = n.borrow_mut();
             n.0 = text.to_string();
         },
+        |_| {},
     );
 }
 
-#[track_caller]
-pub fn Image(cx: Context, url: impl AsRef<str>) {
+#[compose(skip_inject_cx=true)]
+pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.memo(
         |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
@@ -174,11 +170,12 @@ pub fn Image(cx: Context, url: impl AsRef<str>) {
             let mut n = n.borrow_mut();
             n.0 = url.to_string();
         },
+        |_| {},
     );
 }
 
-#[track_caller]
-pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
+#[compose(skip_inject_cx=true)]
+pub fn RandomRenderObject(cx: &mut Composer, text: impl AsRef<str>) {
     let t = text.as_ref();
     cx.memo(
         |_| {
@@ -204,37 +201,13 @@ pub fn RandomRenderObject(cx: Context, text: impl AsRef<str>) {
                 img.0 = url;
             };
         },
+        |_| {},
     );
 }
 
 ////////////////////////////////////////////////////////////////////////////
 // Rendering backend - Not scope of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-pub trait Node: Debug + Downcast + Unpin {
-    fn debug_print(&self) {}
-}
-impl_downcast!(Node);
-
-impl<T: 'static + Unpin + Debug> Node for T {}
-
-impl<T: 'static + Unpin + Debug> Into<Box<dyn Node>> for Rc<RefCell<T>> {
-    fn into(self) -> Box<dyn Node> {
-        Box::new(self)
-    }
-}
-
-impl<'a> ComposeNode for &'a mut dyn Node {
-    fn cast_mut<T: 'static + Debug + Unpin>(&mut self) -> Option<&mut T> {
-        self.downcast_mut::<T>()
-    }
-}
-
-impl Into<Box<dyn Node>> for Rc<RefCell<dyn RenderObject>> {
-    fn into(self) -> Box<dyn Node> {
-        Box::new(self)
-    }
-}
-
 pub struct PaintContext {
     depth: usize,
 }
@@ -244,7 +217,7 @@ impl PaintContext {
     }
 }
 
-pub trait RenderObject: Debug + Downcast {
+pub trait RenderObject: Debug + ComposeNode {
     fn paint(&self, context: &mut PaintContext);
 }
 impl_downcast!(RenderObject);

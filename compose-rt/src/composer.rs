@@ -1,28 +1,24 @@
 use crate::{CallId, Recomposer, Slot, SlotId};
+use downcast_rs::{impl_downcast, Downcast};
 use log::trace;
-use std::{any::Any, collections::HashMap, fmt::Debug, panic::Location, pin::Pin};
+use std::{any::Any, collections::HashMap, panic::Location, pin::Pin};
 
-pub trait ComposeNode {
-    fn cast_mut<T>(&mut self) -> Option<&mut T>
-    where
-        T: 'static + Unpin + Debug;
-}
+pub trait ComposeNode: Unpin + Downcast {}
+impl_downcast!(ComposeNode);
+impl<T: Unpin + Downcast> ComposeNode for T {}
 
-#[derive(Debug)]
-pub struct Composer<N: ?Sized> {
-    pub(crate) tape: Vec<Slot<Pin<Box<N>>>>,
+type Tape = Vec<Slot<Pin<Box<dyn ComposeNode>>>>;
+
+pub struct Composer {
+    pub(crate) tape: Tape,
     pub(crate) slot_depth: Vec<usize>,
     pub(crate) depth: usize,
     pub(crate) cursor: usize,
     pub(crate) slot_key: Option<usize>,
-    pub(crate) recycle_bin: HashMap<SlotId, Vec<Slot<Pin<Box<N>>>>>,
+    pub(crate) recycle_bin: HashMap<SlotId, Tape>,
 }
 
-impl<N> Composer<N>
-where
-    N: 'static + ?Sized + Any + Unpin,
-    for<'a> &'a mut N: ComposeNode,
-{
+impl Composer {
     pub fn new(capacity: usize) -> Self {
         Composer {
             tape: Vec::with_capacity(capacity),
@@ -35,12 +31,8 @@ where
     }
 }
 
-impl<N> Composer<N>
-where
-    N: 'static + ?Sized + Any + Unpin,
-    for<'a> &'a mut N: ComposeNode,
-{
-    pub fn finalize(mut self) -> Recomposer<N> {
+impl Composer {
+    pub fn finalize(mut self) -> Recomposer {
         self.tape.truncate(self.cursor);
         self.slot_depth.truncate(self.cursor);
         self.cursor = 0;
@@ -49,85 +41,125 @@ where
         Recomposer { composer: self }
     }
 
-    pub fn finalize_with<F>(mut self, func: F) -> Recomposer<N>
+    pub fn finalize_with<F>(mut self, func: F) -> Recomposer
     where
         F: FnOnce(&mut Self),
     {
+        self.cursor = 0;
+        self.depth = 0;
         func(&mut self);
         Recomposer { composer: self }
     }
 
     #[track_caller]
-    pub fn tag<F>(&mut self, key: usize, func: F)
+    pub fn tag<F, T>(&mut self, key: usize, func: F) -> T
     where
-        F: FnOnce(&mut Composer<N>),
+        F: FnOnce(&mut Composer) -> T,
     {
         // set the key of first encountered group
         self.slot_key = Some(key);
-        func(self);
+        func(self)
     }
 
     #[track_caller]
     pub fn state<Node>(&mut self, val: Node) -> Node
     where
-        Node: Any + Debug + Unpin + Into<Box<N>> + Clone,
+        Node: ComposeNode + Clone,
     {
-        self.memo(|_| val, |_| true, |_| {})
+        self.memo(|_| val, |_| true, |_| {}, |n| n.clone())
     }
 
     #[track_caller]
-    pub fn memo<F, S, U, Node>(&mut self, factory: F, skip: S, update: U) -> Node
+    pub fn memo<F, Node, S, U, O, Output>(
+        &mut self,
+        factory: F,
+        skip: S,
+        update: U,
+        output: O,
+    ) -> Output
     where
-        F: FnOnce(&mut Composer<N>) -> Node,
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
         S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
-        Node: Any + Debug + Unpin + Into<Box<N>> + Clone,
+        O: FnOnce(&Node) -> Output,
     {
-        self.slot(factory, false, |_| {}, false, |_, _| {}, skip, update)
+        self.slot(
+            factory,
+            false,
+            |_| {},
+            false,
+            |_, _| {},
+            skip,
+            update,
+            output,
+        )
     }
 
     #[track_caller]
-    pub fn group_use_children<F, C, S, A, U, Node>(
+    pub fn group_use_children<F, Node, C, S, A, U, O, Output>(
         &mut self,
         factory: F,
         children: C,
         apply_children: A,
         skip: S,
         update: U,
-    ) -> Node
+        output: O,
+    ) -> Output
     where
-        F: FnOnce(&mut Composer<N>) -> Node,
-        C: FnOnce(&mut Composer<N>),
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
+        C: FnOnce(&mut Composer),
         S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&N>),
+        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
         U: FnOnce(&mut Node),
-        Node: Any + Debug + Unpin + Into<Box<N>> + Clone,
+        O: FnOnce(&Node) -> Output,
     {
-        self.slot(factory, true, children, true, apply_children, skip, update)
+        self.slot(
+            factory,
+            true,
+            children,
+            true,
+            apply_children,
+            skip,
+            update,
+            output,
+        )
     }
 
     #[track_caller]
-    pub fn group<F, C, S, A, U, Node>(
+    pub fn group<F, Node, C, S, A, U, O, Output>(
         &mut self,
         factory: F,
         children: C,
         skip: S,
         update: U,
-    ) -> Node
+        output: O,
+    ) -> Output
     where
-        F: FnOnce(&mut Composer<N>) -> Node,
-        C: FnOnce(&mut Composer<N>),
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
+        C: FnOnce(&mut Composer),
         S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&N>),
+        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
         U: FnOnce(&mut Node),
-        Node: Any + Debug + Unpin + Into<Box<N>> + Clone,
+        O: FnOnce(&Node) -> Output,
     {
-        self.slot(factory, true, children, false, |_, _| {}, skip, update)
+        self.slot(
+            factory,
+            true,
+            children,
+            false,
+            |_, _| {},
+            skip,
+            update,
+            output,
+        )
     }
 
     #[track_caller]
     #[allow(clippy::too_many_arguments)]
-    pub fn slot<F, C, S, A, U, Node>(
+    pub fn slot<F, Node, C, S, A, U, O, Output>(
         &mut self,
         factory: F,
         has_children: bool,
@@ -136,14 +168,16 @@ where
         apply_children: A,
         skip: S,
         update: U,
-    ) -> Node
+        output: O,
+    ) -> Output
     where
-        F: FnOnce(&mut Composer<N>) -> Node,
-        C: FnOnce(&mut Composer<N>),
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
+        C: FnOnce(&mut Composer),
         S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&N>),
+        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
         U: FnOnce(&mut Node),
-        Node: Any + Debug + Unpin + Into<Box<N>> + Clone,
+        O: FnOnce(&Node) -> Output,
     {
         // remember current cursor
         let cursor = self.forward_cursor();
@@ -180,9 +214,9 @@ where
             (s.id, s.size, data)
         });
 
-        if let Some((p_slot_id, p_size, mut p_data)) = cached {
+        if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
-                if let Some(node) = p_data.cast_mut::<Node>() {
+                if let Some(node) = p_data.as_any_mut().downcast_mut::<Node>() {
                     trace!("{: >15} {} - {:?}", "get_cached", cursor, slot_id,);
                     if skip(node) {
                         trace!(
@@ -204,7 +238,7 @@ where
                         update(node);
                         self.end_slot_update(cursor);
                     }
-                    return node.clone();
+                    return output(node);
                 } else {
                     // NOTE:
                     // same slot_id can only return same type as before under same root fn
@@ -234,14 +268,14 @@ where
             }
         }
 
-        let node_cloned = node.clone();
+        let out = output(&node);
         // NOTE: expect node.into() will not change what node is
-        let data = Pin::new(node.into());
+        let data = Box::pin(node);
         self.end_slot(cursor, data);
-        node_cloned
+        out
     }
 
-    fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&N> {
+    fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&dyn ComposeNode> {
         let child_start = cursor + 1;
         let children = self.slot_depth[child_start..self.cursor]
             .iter()
@@ -269,7 +303,7 @@ where
         trace!("{: >15} {} - {:?}", "begin_slot", cursor, slot_id);
     }
 
-    fn end_slot(&mut self, cursor: usize, data: Pin<Box<N>>) {
+    fn end_slot(&mut self, cursor: usize, data: Pin<Box<dyn ComposeNode>>) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {

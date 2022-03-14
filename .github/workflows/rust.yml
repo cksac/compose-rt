@@ -15,7 +15,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build
       run: cargo build --verbose
-    - name: Run ui_trait example
-      run: cargo run --example ui_trait
-    - name: Run ui_enum example
-      run: cargo run --example ui_enum
+    - name: Run ui example
+      run: cargo run --example ui
