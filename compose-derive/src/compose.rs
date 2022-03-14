@@ -1,7 +1,7 @@
 use darling::FromMeta;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ItemFn};
+use syn::ItemFn;
 
 #[derive(Debug, FromMeta)]
 pub struct MacroArgs {
@@ -27,7 +27,7 @@ pub fn transform_compose_fn(macro_args: MacroArgs, func: ItemFn) -> TokenStream 
         quote! {
             #[track_caller]
             fn #fn_name<#fn_generics>(cx: &mut compose_rt::Composer, #fn_args) #fn_return
-            #fn_where 
+            #fn_where
             #fn_block
         }
     }
