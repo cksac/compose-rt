@@ -12,7 +12,7 @@ repository = "https://github.com/cksac/compose-rt"
 homepage = "https://github.com/cksac/compose-rt"
 
 [dependencies]
-compose-derive = { path = '../compose-derive' }
+compose-derive = { version = "0.1", path = '../compose-derive' }
 log = "0.4"
 downcast-rs = "1.2"
 
