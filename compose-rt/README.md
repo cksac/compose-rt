@@ -7,7 +7,7 @@ Below example show how to build a declarative GUI using compose-rt
 
 ```toml
 [dependencies]
-compose-rt = "0.4"
+compose-rt = "0.5"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
@@ -17,15 +17,10 @@ fake = "2.4"
 ```rust
 #![allow(non_snake_case)]
 
-use compose_rt::{compose, ComposeNode, Composer};
+use compose_rt::{compose, ComposeNode, Composer, Recomposer};
 use downcast_rs::impl_downcast;
 use fake::{Fake, Faker};
-use std::{
-    any::TypeId,
-    cell::{RefCell, RefMut},
-    fmt::Debug,
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // User application
@@ -76,30 +71,29 @@ fn main() {
     // define root compose
     let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
 
-    let mut cx = Composer::new(10);
+    let mut recomposer = Recomposer::new();
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(&mut cx, &movies);
+    root_fn(recomposer.composer(), &movies);
 
-    // end compose, Recomposer allow you to access root
-    let recomposer = cx.finalize();
+    // end compose
+    recomposer.finalize();
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
         let mut context = PaintContext::new();
         root.borrow().paint(&mut context);
     }
 
-    cx = recomposer.compose();
     // rerun with new input
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(&mut cx, &movies);
+    root_fn(recomposer.composer(), &movies);
 
-    let recomposer = cx.finalize();
+    recomposer.finalize();
     // end compose, Recomposer allow you to access root
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
@@ -111,7 +105,7 @@ fn main() {
 ////////////////////////////////////////////////////////////////////////////
 // Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Column<C>(cx: &mut Composer, content: C)
 where
     C: Fn(&mut Composer),
@@ -143,7 +137,7 @@ where
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.memo(
@@ -157,7 +151,7 @@ pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     let url = url.as_ref();
     cx.memo(
@@ -171,7 +165,7 @@ pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
     );
 }
 
-#[compose(skip_inject_cx=true)]
+#[compose(skip_inject_cx = true)]
 pub fn RandomRenderObject(cx: &mut Composer, text: impl AsRef<str>) {
     let t = text.as_ref();
     cx.memo(
