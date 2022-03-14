@@ -5,6 +5,19 @@ pub struct Recomposer {
 }
 
 impl Recomposer {
+    pub fn new() -> Self {
+        Recomposer {
+            composer: Composer::new()
+
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Recomposer {
+            composer: Composer::with_capacity(capacity)
+        }
+    }
+
     pub fn root<R: 'static>(&self) -> Option<&R> {
         self.composer
             .tape
@@ -21,7 +34,15 @@ impl Recomposer {
             .and_then(|n| n.as_any_mut().downcast_mut::<R>())
     }
 
-    pub fn compose(self) -> Composer {
-        self.composer
+    pub fn composer(&mut self) -> &mut Composer {
+        &mut self.composer
+    }
+
+    pub fn finalize(&mut self) {
+        self.composer.tape.truncate(self.composer.cursor);
+        self.composer.slot_depth.truncate(self.composer.cursor);
+        self.composer.cursor = 0;
+        self.composer.depth = 0;
+        self.composer.recycle_bin.clear();
     }
 }

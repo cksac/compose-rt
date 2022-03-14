@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use compose_rt::{compose, ComposeNode, Composer};
+use compose_rt::{compose, ComposeNode, Composer, Recomposer};
 use downcast_rs::impl_downcast;
 use fake::{Fake, Faker};
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
@@ -54,30 +54,29 @@ fn main() {
     // define root compose
     let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
 
-    let mut cx = Composer::new(10);
+    let mut recomposer = Recomposer::new();
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(&mut cx, &movies);
+    root_fn(recomposer.composer(), &movies);
 
-    // end compose, Recomposer allow you to access root
-    let mut recomposer = cx.finalize();
+    // end compose
+    recomposer.finalize();
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
         let mut context = PaintContext::new();
         root.borrow().paint(&mut context);
     }
 
-    cx = recomposer.compose();
     // rerun with new input
     let movies = vec![
         Movie::new(1, "AA", "IMG_AA"),
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(&mut cx, &movies);
+    root_fn(recomposer.composer(), &movies);
 
-    recomposer = cx.finalize();
+    recomposer.finalize();
     // end compose, Recomposer allow you to access root
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree

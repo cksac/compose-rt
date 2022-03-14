@@ -19,7 +19,18 @@ pub struct Composer {
 }
 
 impl Composer {
-    pub fn new(capacity: usize) -> Self {
+    pub fn new() -> Self {
+        Composer {
+            tape: Vec::new(),
+            slot_depth: Vec::new(),
+            depth: 0,
+            cursor: 0,
+            slot_key: None,
+            recycle_bin: HashMap::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
         Composer {
             tape: Vec::with_capacity(capacity),
             slot_depth: Vec::with_capacity(capacity),
@@ -28,27 +39,6 @@ impl Composer {
             slot_key: None,
             recycle_bin: HashMap::new(),
         }
-    }
-}
-
-impl Composer {
-    pub fn finalize(mut self) -> Recomposer {
-        self.tape.truncate(self.cursor);
-        self.slot_depth.truncate(self.cursor);
-        self.cursor = 0;
-        self.depth = 0;
-        self.recycle_bin.clear();
-        Recomposer { composer: self }
-    }
-
-    pub fn finalize_with<F>(mut self, func: F) -> Recomposer
-    where
-        F: FnOnce(&mut Self),
-    {
-        self.cursor = 0;
-        self.depth = 0;
-        func(&mut self);
-        Recomposer { composer: self }
     }
 
     #[track_caller]
