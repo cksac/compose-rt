@@ -1,6 +1,6 @@
-use crate::{CallId, Recomposer, Slot, SlotId};
+use crate::{CallId, Slot, SlotId};
 use downcast_rs::{impl_downcast, Downcast};
-use log::trace;
+use log::{trace, warn};
 use std::{collections::HashMap, panic::Location};
 
 pub trait ComposeNode: Downcast {}
@@ -74,47 +74,7 @@ impl Composer {
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
-        self.slot(
-            factory,
-            false,
-            |_| {},
-            false,
-            |_, _| {},
-            skip,
-            update,
-            output,
-        )
-    }
-
-    #[track_caller]
-    pub fn group_use_children<F, Node, C, S, A, U, O, Output>(
-        &mut self,
-        factory: F,
-        children: C,
-        apply_children: A,
-        skip: S,
-        update: U,
-        output: O,
-    ) -> Output
-    where
-        F: FnOnce(&mut Composer) -> Node,
-        Node: ComposeNode,
-        C: FnOnce(&mut Composer),
-        S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
-        U: FnOnce(&mut Node),
-        O: FnOnce(&Node) -> Output,
-    {
-        self.slot(
-            factory,
-            true,
-            children,
-            true,
-            apply_children,
-            skip,
-            update,
-            output,
-        )
+        self.group(factory, |_| {}, skip, update, output)
     }
 
     #[track_caller]
@@ -136,8 +96,8 @@ impl Composer {
     {
         self.slot(
             factory,
-            true,
             children,
+            |_, _| {},
             false,
             |_, _| {},
             skip,
@@ -147,14 +107,42 @@ impl Composer {
     }
 
     #[track_caller]
-    #[allow(clippy::too_many_arguments)]
-    pub fn slot<F, Node, C, S, A, U, O, Output>(
+    pub fn group_apply_children<F, Node, C, Children, AC, S, U, O, Output>(
         &mut self,
         factory: F,
-        has_children: bool,
         children: C,
-        use_children: bool,
-        apply_children: A,
+        apply_children: AC,
+        skip: S,
+        update: U,
+        output: O,
+    ) -> Output
+    where
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
+        C: FnOnce(&mut Composer) -> Children,
+        AC: FnOnce(&mut Node, Children),
+        S: FnOnce(&mut Node) -> bool,
+        U: FnOnce(&mut Node),
+        O: FnOnce(&Node) -> Output,
+    {
+        self.slot(
+            factory,
+            children,
+            apply_children,
+            false,
+            |_, _| {},
+            skip,
+            update,
+            output,
+        )
+    }
+
+    #[track_caller]
+    pub fn group_use_children<F, Node, C, UC, S, U, O, Output>(
+        &mut self,
+        factory: F,
+        children: C,
+        use_children: UC,
         skip: S,
         update: U,
         output: O,
@@ -163,8 +151,43 @@ impl Composer {
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
         C: FnOnce(&mut Composer),
+        UC: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
         S: FnOnce(&mut Node) -> bool,
-        A: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
+        U: FnOnce(&mut Node),
+        O: FnOnce(&Node) -> Output,
+    {
+        self.slot(
+            factory,
+            children,
+            |_, _| {},
+            true,
+            use_children,
+            skip,
+            update,
+            output,
+        )
+    }
+
+    #[track_caller]
+    #[allow(clippy::too_many_arguments)]
+    pub fn slot<F, Node, C, Children, AC, UC, S, U, O, Output>(
+        &mut self,
+        factory: F,
+        children: C,
+        apply_children: AC,
+        require_use_children: bool,
+        use_children: UC,
+        skip: S,
+        update: U,
+        output: O,
+    ) -> Output
+    where
+        F: FnOnce(&mut Composer) -> Node,
+        Node: ComposeNode,
+        C: FnOnce(&mut Composer) -> Children,
+        AC: FnOnce(&mut Node, Children),
+        UC: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
+        S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
@@ -217,12 +240,11 @@ impl Composer {
                         );
                         self.skip_slot(cursor, p_size);
                     } else {
-                        if has_children {
-                            children(self);
-                            if use_children {
-                                let c = self.children_of_slot_at(cursor);
-                                apply_children(node, c);
-                            }
+                        let c = children(self);
+                        apply_children(node, c);
+                        if require_use_children {
+                            let cn = self.children_of_slot_at(cursor);
+                            use_children(node, cn);
                         }
                         update(node);
                         self.end_slot_update(cursor);
@@ -230,9 +252,8 @@ impl Composer {
                     return output(node);
                 } else {
                     // NOTE:
-                    // same slot_id can only return same type as before under same root fn
-                    // However, this can happen when recompose with different root fn
-                    trace!(
+                    // same slot_id can only return same type as before under same root fn?
+                    warn!(
                         "{: >15} {} - {:?} - {:?}",
                         "downcast failed",
                         cursor,
@@ -248,17 +269,14 @@ impl Composer {
         self.begin_slot(cursor, slot_id);
         let mut node = factory(self);
 
-        if has_children {
-            children(self);
-
-            if use_children {
-                let c = self.children_of_slot_at(cursor);
-                apply_children(&mut node, c);
-            }
+        let c = children(self);
+        apply_children(&mut node, c);
+        if require_use_children {
+            let cn = self.children_of_slot_at(cursor);
+            use_children(&mut node, cn);
         }
 
         let out = output(&node);
-        // NOTE: expect node.into() will not change what node is
         let data = Box::new(node);
         self.end_slot(cursor, data);
         out
@@ -331,5 +349,11 @@ impl Composer {
     fn recycle_slot(&mut self, cursor: usize, slot_id: SlotId, size: usize) {
         let slots = self.tape.drain(cursor..cursor + size).collect();
         self.recycle_bin.insert(slot_id, slots);
+    }
+}
+
+impl Default for Composer {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -7,14 +7,13 @@ pub struct Recomposer {
 impl Recomposer {
     pub fn new() -> Self {
         Recomposer {
-            composer: Composer::new()
-
+            composer: Composer::new(),
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Recomposer {
-            composer: Composer::with_capacity(capacity)
+            composer: Composer::with_capacity(capacity),
         }
     }
 
@@ -44,5 +43,11 @@ impl Recomposer {
         self.composer.cursor = 0;
         self.composer.depth = 0;
         self.composer.recycle_bin.clear();
+    }
+}
+
+impl Default for Recomposer {
+    fn default() -> Self {
+        Self::new()
     }
 }

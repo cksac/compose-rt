@@ -95,7 +95,7 @@ where
 {
     cx.group_use_children(
         |_| Rc::new(RefCell::new(RenderFlex::new())),
-        |cx| content(cx),
+        content,
         |node, children| {
             let mut flex = node.borrow_mut();
             flex.children.clear();
