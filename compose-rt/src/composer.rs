@@ -1,13 +1,13 @@
 use crate::{CallId, Recomposer, Slot, SlotId};
 use downcast_rs::{impl_downcast, Downcast};
 use log::trace;
-use std::{any::Any, collections::HashMap, panic::Location, pin::Pin};
+use std::{collections::HashMap, panic::Location};
 
-pub trait ComposeNode: Unpin + Downcast {}
+pub trait ComposeNode: Downcast {}
 impl_downcast!(ComposeNode);
-impl<T: Unpin + Downcast> ComposeNode for T {}
+impl<T: Downcast> ComposeNode for T {}
 
-type Tape = Vec<Slot<Pin<Box<dyn ComposeNode>>>>;
+type Tape = Vec<Slot<Box<dyn ComposeNode>>>;
 
 pub struct Composer {
     pub(crate) tape: Tape,
@@ -209,8 +209,8 @@ impl Composer {
         let cached = self.tape.get_mut(cursor).map(|s| {
             // `Composer` required to guarantee `content` function not able to access current slot in self.tape
             // Otherwise need to wrap self.tape with RefCell to remove this unsafe but come with cost
-            let ptr = s.data.as_mut().expect("slot data").as_mut().get_mut();
-            let data = Box::leak(unsafe { Box::from_raw(ptr) });
+            let ptr = s.data.as_mut().expect("slot data").as_mut() as *mut dyn ComposeNode;
+            let data = unsafe { &mut *ptr };
             (s.id, s.size, data)
         });
 
@@ -270,7 +270,7 @@ impl Composer {
 
         let out = output(&node);
         // NOTE: expect node.into() will not change what node is
-        let data = Box::pin(node);
+        let data = Box::new(node);
         self.end_slot(cursor, data);
         out
     }
@@ -291,7 +291,7 @@ impl Composer {
             .filter_map(|c| {
                 self.tape
                     .get(c)
-                    .map(|s| s.data.as_ref().expect("slot data").as_ref().get_ref())
+                    .map(|s| s.data.as_ref().expect("slot data").as_ref())
             })
             .collect();
         children
@@ -303,7 +303,7 @@ impl Composer {
         trace!("{: >15} {} - {:?}", "begin_slot", cursor, slot_id);
     }
 
-    fn end_slot(&mut self, cursor: usize, data: Pin<Box<dyn ComposeNode>>) {
+    fn end_slot(&mut self, cursor: usize, data: Box<dyn ComposeNode>) {
         self.depth -= 1;
         let curr_cursor = self.current_cursor();
         if let Some(slot) = self.tape.get_mut(cursor) {

@@ -66,7 +66,7 @@ fn main() {
     root_fn(&mut cx, &movies);
 
     // end compose, Recomposer allow you to access root
-    let recomposer = cx.finalize();
+    let mut recomposer = cx.finalize();
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
         let mut context = PaintContext::new();
@@ -82,7 +82,7 @@ fn main() {
     ];
     root_fn(&mut cx, &movies);
 
-    let recomposer = cx.finalize();
+    recomposer = cx.finalize();
     // end compose, Recomposer allow you to access root
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
