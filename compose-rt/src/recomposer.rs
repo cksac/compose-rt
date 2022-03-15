@@ -50,10 +50,11 @@ impl Recomposer {
         let composer = &mut self.composer;
         composer.tape.truncate(composer.cursor);
         composer.slot_depth.truncate(composer.cursor);
+        composer.state_tape.truncate(composer.state_cursor);
+        composer.recycle_bin.clear();
+
         composer.cursor = 0;
         composer.depth = 0;
-        composer.recycle_bin.clear();
-        composer.state_tape.truncate(composer.state_cursor);
         composer.state_cursor = 0;
         composer.composing = false;
     }

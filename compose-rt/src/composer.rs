@@ -118,12 +118,7 @@ impl Composer {
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
                 if let Some(node) = p_data.as_any().downcast_ref::<Node>() {
-                    trace!(
-                        "{: >15} {} - {:?}",
-                        "get_state",
-                        curr_cursor,
-                        slot_id,
-                    );
+                    trace!("{: >15} {} - {:?}", "get_state", curr_cursor, slot_id,);
                     return node.clone();
                 }
             }
@@ -337,13 +332,8 @@ impl Composer {
             // slot id match
             if curr_slot_id == slot.id {
                 // node type match
-                if let Some(node) = slot
-                    .data
-                    .as_mut()
-                    .expect("slot data")
-                    .as_any_mut()
-                    .downcast_mut::<Node>()
-                {
+                let slot_data = slot.data.as_mut().expect("slot data").as_mut();
+                if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
                     // use slot
                     trace!(
                         "C{: >6}:{}{} | {:?} | {:?}",
