@@ -480,9 +480,3 @@ impl Composer {
         self.recycle_bin.insert(slot_id, slots);
     }
 }
-
-impl Default for Composer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
