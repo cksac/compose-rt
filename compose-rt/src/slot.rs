@@ -95,6 +95,7 @@ impl Debug for SlotId {
     }
 }
 
+#[derive(Debug)]
 pub struct Slot<T> {
     pub id: SlotId,
     pub size: usize,
@@ -116,17 +117,5 @@ impl<T> Slot<T> {
             data: None,
             size: 1,
         }
-    }
-}
-
-impl<T: Debug> Debug for Slot<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut s = f.debug_struct("Slot");
-        s.field("id", &self.id);
-        s.field("data", &self.data);
-        if self.size > 1 {
-            s.field("size", &self.size);
-        }
-        s.finish()
     }
 }

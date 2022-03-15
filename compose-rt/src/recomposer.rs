@@ -1,5 +1,6 @@
 use crate::Composer;
 
+#[derive(Debug)]
 pub struct Recomposer {
     pub(crate) composer: Composer,
 }

@@ -17,6 +17,7 @@ type Tape = Vec<Slot<Box<dyn ComposeNode>>>;
 
 static COMPOSER_ID: AtomicUsize = AtomicUsize::new(0);
 
+#[derive(Debug)]
 pub struct Composer {
     pub(crate) id: usize,
     pub(crate) composing: bool,
