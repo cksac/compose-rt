@@ -5,12 +5,13 @@
 
 A positional memoization runtime similar to Jetpack Compose Runtime. 
 
+
 # example
 Below example show how to build a declarative GUI using compose-rt
 
 ```toml
 [dependencies]
-compose-rt = "0.5"
+compose-rt = "0.6"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
@@ -59,7 +60,7 @@ pub fn MovieOverview(movie: &Movie) {
         Image(cx, &movie.img_url);
         RandomRenderObject(cx, &movie.name);
 
-        let count = cx.state(Rc::new(RefCell::new(0usize)));
+        let count = cx.remember(Rc::new(RefCell::new(0usize)));
         Text(cx, format!("compose count {}", count.borrow()));
         *count.borrow_mut() += 1;
     });
@@ -78,7 +79,7 @@ fn main() {
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(recomposer.composer(), &movies);
+    root_fn(recomposer.cx(), &movies);
 
     // end compose
     recomposer.finalize();
@@ -94,7 +95,7 @@ fn main() {
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(recomposer.composer(), &movies);
+    root_fn(recomposer.cx(), &movies);
 
     recomposer.finalize();
     // end compose, Recomposer allow you to access root
