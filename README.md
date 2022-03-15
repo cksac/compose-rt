@@ -79,10 +79,10 @@ fn main() {
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(recomposer.cx(), &movies);
+    recomposer.compose(|cx| {
+        root_fn(cx, &movies);
+    });
 
-    // end compose
-    recomposer.finalize();
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree
         let mut context = PaintContext::new();
@@ -95,9 +95,10 @@ fn main() {
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(recomposer.cx(), &movies);
+    recomposer.compose(|cx| {
+        root_fn(cx, &movies);
+    });
 
-    recomposer.finalize();
     // end compose, Recomposer allow you to access root
     if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
         // call paint of render tree

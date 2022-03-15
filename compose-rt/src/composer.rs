@@ -18,6 +18,7 @@ static COMPOSER_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Composer {
     pub(crate) id: usize,
+    pub(crate) composing: bool,
     pub(crate) tape: Tape,
     pub(crate) slot_depth: Vec<usize>,
     pub(crate) depth: usize,
@@ -32,6 +33,7 @@ impl Composer {
     pub(crate) fn new() -> Self {
         Composer {
             id: COMPOSER_ID.fetch_add(1, Ordering::SeqCst),
+            composing: true,
             tape: Vec::new(),
             slot_depth: Vec::new(),
             depth: 0,
@@ -46,6 +48,7 @@ impl Composer {
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Composer {
             id: COMPOSER_ID.fetch_add(1, Ordering::SeqCst),
+            composing: true,
             tape: Vec::with_capacity(capacity),
             slot_depth: Vec::with_capacity(capacity),
             depth: 0,
@@ -63,11 +66,12 @@ impl Composer {
         F: FnOnce(&mut Composer) -> T,
     {
         let id = self.id;
+
         // set the key of first encountered group
         self.slot_key = Some(key);
 
         let result = func(self);
-        assert!(id == self.id, "Composer changed");
+        assert!(id == self.id && self.composing, "Composer changed");
         result
     }
 
@@ -342,7 +346,7 @@ impl Composer {
                         self.skip_slot(cursor, p_size);
                     } else {
                         let c = children(self);
-                        assert!(id == self.id, "Composer changed");
+                        assert!(id == self.id && self.composing, "Composer changed");
 
                         apply_children(node, c);
                         if require_use_children {
@@ -388,10 +392,10 @@ impl Composer {
         self.tape.insert(cursor, slot);
 
         let mut node = factory(self);
-        assert!(id == self.id, "Composer changed");
+        assert!(id == self.id && self.composing, "Composer changed");
 
         let c = children(self);
-        assert!(id == self.id, "Composer changed");
+        assert!(id == self.id && self.composing, "Composer changed");
 
         apply_children(&mut node, c);
         if require_use_children {
@@ -402,10 +406,10 @@ impl Composer {
         let out = output(&node);
         let data = Box::new(node);
 
-        let curr_cursor = self.current_cursor();
+        let new_cursor = self.cursor;
         let slot = self.tape.get_mut(cursor).expect("slot");
         slot.data = Some(data);
-        slot.size = curr_cursor - cursor;
+        slot.size = new_cursor - cursor;
         // TODO: can skip check when not in trace?
         if slot.size > 1 {
             trace!(
@@ -447,9 +451,8 @@ impl Composer {
     #[inline]
     fn end_slot_update(&mut self, cursor: usize) {
         self.depth -= 1;
-        let curr_cursor = self.current_cursor();
-        if let Some(slot) = self.tape.get_mut(cursor) {
-            slot.size = curr_cursor - cursor;
+        if let Some(slot) = self.tape.get_mut(self.cursor) {
+            slot.size = self.cursor - cursor;
         }
     }
 
@@ -460,13 +463,8 @@ impl Composer {
     }
 
     #[inline]
-    fn current_cursor(&mut self) -> usize {
-        self.cursor
-    }
-
-    #[inline]
     fn forward_cursor(&mut self) -> usize {
-        let cursor = self.current_cursor();
+        let cursor = self.cursor;
         self.cursor = cursor + 1;
         cursor
     }

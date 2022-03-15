@@ -33,11 +33,20 @@ impl Recomposer {
             .and_then(|n| n.as_any_mut().downcast_mut::<R>())
     }
 
-    pub fn cx(&mut self) -> &mut Composer {
-        &mut self.composer
+    pub fn compose<F, T>(&mut self, func: F) -> T
+    where
+        F: FnOnce(&mut Composer) -> T,
+    {
+        let id = self.composer.id;
+        self.composer.composing = true;
+        let t = func(&mut self.composer);
+        assert!(id == self.composer.id, "Composer changed");
+
+        self.finalize();
+        t
     }
 
-    pub fn finalize(&mut self) {
+    fn finalize(&mut self) {
         self.composer.tape.truncate(self.composer.cursor);
         self.composer.slot_depth.truncate(self.composer.cursor);
         self.composer.cursor = 0;
@@ -48,18 +57,7 @@ impl Recomposer {
             .state_tape
             .truncate(self.composer.state_cursor);
         self.composer.state_cursor = 0;
-    }
-
-    pub fn finalize_with<F>(&mut self, func: F, reset_cursor: bool)
-    where
-        F: FnOnce(&mut Composer),
-    {
-        func(&mut self.composer);
-        if reset_cursor {
-            self.composer.cursor = 0;
-            self.composer.depth = 0;
-            self.composer.state_cursor = 0;
-        }
+        self.composer.composing = false;
     }
 }
 
