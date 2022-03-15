@@ -37,30 +37,25 @@ impl Recomposer {
     where
         F: FnOnce(&mut Composer) -> T,
     {
-        let id = self.composer.id;
-        self.composer.composing = true;
-        let t = func(&mut self.composer);
-        assert!(
-            id == self.composer.id && self.composer.composing,
-            "Composer changed"
-        );
-
+        let composer = &mut self.composer;
+        let id = composer.id;
+        composer.composing = true;
+        let t = func(composer);
+        assert!(id == composer.id && composer.composing, "Composer changed");
         self.finalize();
         t
     }
 
     fn finalize(&mut self) {
-        self.composer.tape.truncate(self.composer.cursor);
-        self.composer.slot_depth.truncate(self.composer.cursor);
-        self.composer.cursor = 0;
-        self.composer.depth = 0;
-        self.composer.recycle_bin.clear();
-
-        self.composer
-            .state_tape
-            .truncate(self.composer.state_cursor);
-        self.composer.state_cursor = 0;
-        self.composer.composing = false;
+        let composer = &mut self.composer;
+        composer.tape.truncate(composer.cursor);
+        composer.slot_depth.truncate(composer.cursor);
+        composer.cursor = 0;
+        composer.depth = 0;
+        composer.recycle_bin.clear();
+        composer.state_tape.truncate(composer.state_cursor);
+        composer.state_cursor = 0;
+        composer.composing = false;
     }
 }
 

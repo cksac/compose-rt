@@ -4,13 +4,14 @@ use log::trace;
 use std::{
     any::{type_name, TypeId},
     collections::HashMap,
+    fmt::Debug,
     panic::Location,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-pub trait ComposeNode: Downcast {}
+pub trait ComposeNode: Debug + Downcast {}
 impl_downcast!(ComposeNode);
-impl<T: Downcast> ComposeNode for T {}
+impl<T: Debug + Downcast> ComposeNode for T {}
 
 type Tape = Vec<Slot<Box<dyn ComposeNode>>>;
 
@@ -80,24 +81,28 @@ impl Composer {
     where
         Node: ComposeNode + Clone,
     {
-        self.taged_state(None, val)
+        self.state_with(None, val)
     }
 
     #[track_caller]
-    pub fn taged_state<Node>(&mut self, key: Option<usize>, val: Node) -> Node
+    pub fn state_with<Node>(&mut self, key: Option<usize>, val: Node) -> Node
     where
         Node: ComposeNode + Clone,
     {
-        let state_cursor = self.state_cursor;
+        // save current states
+        let curr_cursor = self.state_cursor;
+
+        // forward cursors
         self.state_cursor += 1;
+
         // construct slot id
         let call_id = CallId::from(Location::caller());
         let slot_id = SlotId::new(call_id, key);
 
-        // found in recycle_bin, restore it
+        // found in recycle_bin, restore it to current cursor
         let slot_group = self.recycle_bin.remove(&slot_id);
         if let Some(group) = slot_group {
-            let mut curr_idx = state_cursor;
+            let mut curr_idx = curr_cursor;
             // TODO: use gap table?
             for slot in group {
                 self.state_tape.insert(curr_idx, slot);
@@ -105,7 +110,7 @@ impl Composer {
             }
         }
 
-        let cached = self.state_tape.get(state_cursor).map(|s| {
+        let cached = self.state_tape.get(curr_cursor).map(|s| {
             let data = s.data.as_ref().expect("state slot").as_ref();
             (s.id, s.size, data)
         });
@@ -114,9 +119,9 @@ impl Composer {
             if slot_id == p_slot_id {
                 if let Some(node) = p_data.as_any().downcast_ref::<Node>() {
                     trace!(
-                        "{: >25} {} - {:?}",
-                        "get_cached_state",
-                        state_cursor,
+                        "{: >15} {} - {:?}",
+                        "get_state",
+                        curr_cursor,
                         slot_id,
                     );
                     return node.clone();
@@ -124,25 +129,28 @@ impl Composer {
             }
             // move previous cached slot to recycle bin
             trace!(
-                "{: >25} {} - {:?} - {:?}",
-                "recycle_state_slot",
-                state_cursor,
-                slot_id,
+                "{: >15} {} - {:?} - {:?}",
+                "recycle_state",
+                curr_cursor,
+                p_slot_id,
                 p_data.type_id()
             );
-            self.recycle_state_slot(state_cursor, p_slot_id, p_size);
+            let slot_end = curr_cursor + p_size;
+            let slots = self.state_tape.drain(curr_cursor..slot_end).collect();
+            self.recycle_bin.insert(p_slot_id, slots);
         }
 
         let node = Box::new(val.clone());
         let slot: Slot<Box<dyn ComposeNode>> = Slot::new(slot_id, node);
-        self.state_tape.insert(state_cursor, slot);
         trace!(
-            "{: >25} {} - {:?} - {:?}",
+            "{: >15} {} - {:?} - {:?}",
             "insert_state",
-            state_cursor,
+            curr_cursor,
             slot_id,
             self.state_tape.len()
         );
+        self.state_tape.insert(curr_cursor, slot);
+
         val
     }
 
@@ -286,28 +294,31 @@ impl Composer {
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
+        // remember current slot states
         let id = self.id;
-
-        // remember current cursor
-        let cursor = self.forward_cursor();
-
+        let curr_cursor = self.cursor;
         let curr_depth = self.depth;
-        self.depth += 1;
-        if let Some(d) = self.slot_depth.get_mut(cursor) {
-            *d = curr_depth
-        } else {
-            self.slot_depth.insert(cursor, curr_depth);
-        }
 
         // construct slot id
         let call_id = CallId::from(Location::caller());
         let key = self.slot_key.take();
-        let slot_id = SlotId::new(call_id, key);
+        let curr_slot_id = SlotId::new(call_id, key);
 
-        // found in recycle_bin, restore it
-        let slot_group = self.recycle_bin.remove(&slot_id);
+        // forward cursor and depth
+        self.cursor += 1;
+        self.depth += 1;
+
+        // update current slot depth
+        if let Some(d) = self.slot_depth.get_mut(curr_cursor) {
+            *d = curr_depth
+        } else {
+            self.slot_depth.insert(curr_cursor, curr_depth);
+        }
+
+        // found in recycle_bin, restore it to curr_cursor
+        let slot_group = self.recycle_bin.remove(&curr_slot_id);
         if let Some(group) = slot_group {
-            let mut curr_idx = cursor;
+            let mut curr_idx = curr_cursor;
             // TODO: use gap table?
             for slot in group {
                 self.tape.insert(curr_idx, slot);
@@ -315,81 +326,99 @@ impl Composer {
             }
         }
 
-        let cached = self.tape.get_mut(cursor).map(|s| {
+        // use slot data in current cursor if slot id and type match
+        let cached = self.tape.get_mut(curr_cursor).map(|slot| {
             // `Composer` required to guarantee `content` function not able to access current slot in self.tape
-            // Otherwise need to wrap self.tape with RefCell to remove this unsafe but come with cost
-            let ptr = s.data.as_mut().expect("slot data").as_mut() as *mut dyn ComposeNode;
-            let data = unsafe { &mut *ptr };
-            (s.id, s.size, data)
+            let slot_ptr = slot as *mut Slot<Box<dyn ComposeNode>>;
+            unsafe { &mut *slot_ptr }
         });
 
-        if let Some((p_slot_id, p_size, p_data)) = cached {
-            if slot_id == p_slot_id {
-                if let Some(node) = p_data.as_any_mut().downcast_mut::<Node>() {
+        if let Some(slot) = cached {
+            // slot id match
+            if curr_slot_id == slot.id {
+                // node type match
+                if let Some(node) = slot
+                    .data
+                    .as_mut()
+                    .expect("slot data")
+                    .as_any_mut()
+                    .downcast_mut::<Node>()
+                {
+                    // use slot
                     trace!(
                         "C{: >6}:{}{} | {:?} | {:?}",
-                        cursor,
+                        curr_cursor,
                         "  ".repeat(self.depth),
                         type_name::<Node>(),
                         TypeId::of::<Node>(),
-                        slot_id
+                        curr_slot_id
                     );
                     if skip(node) {
                         trace!(
                             "S{: >6}:{}{} | {:?} | {:?}",
-                            cursor,
+                            curr_cursor,
                             "  ".repeat(self.depth),
                             type_name::<Node>(),
                             TypeId::of::<Node>(),
-                            slot_id
+                            curr_slot_id
                         );
-                        self.skip_slot(cursor, p_size);
+                        // skip to slot end
+                        self.cursor = curr_cursor + slot.size;
                     } else {
+                        // rerun
                         let c = children(self);
                         assert!(id == self.id && self.composing, "Composer changed");
 
                         apply_children(node, c);
                         if require_use_children {
-                            let cn = self.children_of_slot_at(cursor);
+                            let cn = self.children_of_slot_at(curr_cursor);
                             use_children(node, cn);
                         }
                         update(node);
 
                         trace!(
                             "U{: >6}:{}{} | {:?} | {:?}",
-                            cursor,
+                            curr_cursor,
                             "  ".repeat(self.depth),
                             type_name::<Node>(),
                             TypeId::of::<Node>(),
-                            slot_id
+                            curr_slot_id
                         );
-                        self.end_slot_update(cursor);
+
+                        // update new slot size after children fn done
+                        slot.size = self.cursor - curr_cursor;
                     }
+
+                    self.depth -= 1;
                     return output(node);
                 }
             }
-            // move previous cached slot to recycle bin
-            self.recycle_slot(cursor, p_slot_id, p_size);
+            // if curr_slot_id != cached slot id and type mismatch
+            // move cached slot to recycle bin
             trace!(
                 "-{: >6}:{}{:?} | {:?} | {:?}",
-                cursor,
+                curr_cursor,
                 "  ".repeat(self.depth),
-                p_data.type_id(),
-                slot_id,
-                p_size
+                slot.data.as_ref().expect("slot data").type_id(),
+                slot.id,
+                slot.size
             );
+            let slot_end = curr_cursor + slot.size;
+            let slots = self.tape.drain(curr_cursor..slot_end).collect();
+            self.recycle_bin.insert(slot.id, slots);
         }
 
+        // if new or cache miss, insert slot
         trace!(
             "+{: >6}:{}{} | {:?} | {:?}",
-            cursor,
+            curr_cursor,
             "  ".repeat(self.depth),
             type_name::<Node>(),
             TypeId::of::<Node>(),
-            slot_id
+            curr_slot_id
         );
-        let slot = Slot::placeholder(slot_id);
-        self.tape.insert(cursor, slot);
+        let slot = Slot::placeholder(curr_slot_id);
+        self.tape.insert(curr_cursor, slot);
 
         let mut node = factory(self);
         assert!(id == self.id && self.composing, "Composer changed");
@@ -399,30 +428,29 @@ impl Composer {
 
         apply_children(&mut node, c);
         if require_use_children {
-            let cn = self.children_of_slot_at(cursor);
+            let cn = self.children_of_slot_at(curr_cursor);
             use_children(&mut node, cn);
         }
 
         let out = output(&node);
         let data = Box::new(node);
 
-        let new_cursor = self.cursor;
-        let slot = self.tape.get_mut(cursor).expect("slot");
+        let slot = self.tape.get_mut(curr_cursor).expect("slot");
         slot.data = Some(data);
-        slot.size = new_cursor - cursor;
+        slot.size = self.cursor - curr_cursor;
+
         // TODO: can skip check when not in trace?
         if slot.size > 1 {
             trace!(
                 "+{: >6}:{}{} | {:?} | {:?}",
-                cursor,
+                curr_cursor,
                 "  ".repeat(self.depth),
                 type_name::<Node>(),
                 TypeId::of::<Node>(),
-                slot_id
+                curr_slot_id
             );
         }
         self.depth -= 1;
-
         out
     }
 
@@ -446,37 +474,5 @@ impl Composer {
             })
             .collect();
         children
-    }
-
-    #[inline]
-    fn end_slot_update(&mut self, cursor: usize) {
-        self.depth -= 1;
-        if let Some(slot) = self.tape.get_mut(self.cursor) {
-            slot.size = self.cursor - cursor;
-        }
-    }
-
-    #[inline]
-    fn skip_slot(&mut self, cursor: usize, size: usize) {
-        self.depth -= 1;
-        self.cursor = cursor + size;
-    }
-
-    #[inline]
-    fn forward_cursor(&mut self) -> usize {
-        let cursor = self.cursor;
-        self.cursor = cursor + 1;
-        cursor
-    }
-
-    fn recycle_slot(&mut self, cursor: usize, slot_id: SlotId, size: usize) {
-        let slot_end = cursor + size;
-        let slots = self.tape.drain(cursor..slot_end).collect();
-        self.recycle_bin.insert(slot_id, slots);
-    }
-
-    fn recycle_state_slot(&mut self, cursor: usize, slot_id: SlotId, size: usize) {
-        let slots = self.state_tape.drain(cursor..cursor + size).collect();
-        self.recycle_bin.insert(slot_id, slots);
     }
 }
