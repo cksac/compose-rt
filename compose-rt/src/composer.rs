@@ -64,21 +64,6 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn tag<F, T>(&mut self, key: usize, func: F) -> T
-    where
-        F: FnOnce(&mut Composer) -> T,
-    {
-        let id = self.id;
-
-        // set the key of first encountered group
-        self.slot_key = Some(key);
-
-        let result = func(self);
-        assert!(id == self.id && self.composing, "Composer changed");
-        result
-    }
-
-    #[track_caller]
     pub fn state<Node>(&mut self, val: Node) -> Node
     where
         Node: ComposeNode + Clone,
@@ -157,6 +142,21 @@ impl Composer {
         val
     }
 
+    #[track_caller]
+    pub fn tag<F, T>(&mut self, key: usize, func: F) -> T
+    where
+        F: FnOnce(&mut Composer) -> T,
+    {
+        let id = self.id;
+
+        // set the key of first encountered group
+        self.slot_key = Some(key);
+
+        let result = func(self);
+        assert!(id == self.id && self.composing, "Composer changed");
+        result
+    }
+    
     #[track_caller]
     pub fn remember<Node>(&mut self, val: Node) -> Node
     where
