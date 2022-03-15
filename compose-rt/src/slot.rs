@@ -102,6 +102,14 @@ pub struct Slot<T> {
 }
 
 impl<T> Slot<T> {
+    pub fn new(slot_id: SlotId, data: T) -> Self {
+        Slot {
+            id: slot_id,
+            data: Some(data),
+            size: 1,
+        }
+    }
+
     pub fn placeholder(slot_id: SlotId) -> Self {
         Slot {
             id: slot_id,

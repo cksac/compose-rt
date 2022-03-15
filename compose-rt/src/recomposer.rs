@@ -43,6 +43,23 @@ impl Recomposer {
         self.composer.cursor = 0;
         self.composer.depth = 0;
         self.composer.recycle_bin.clear();
+
+        self.composer
+            .state_tape
+            .truncate(self.composer.state_cursor);
+        self.composer.state_cursor = 0;
+    }
+
+    pub fn finalize_with<F>(&mut self, func: F, reset_cursor: bool)
+    where
+        F: FnOnce(&mut Composer),
+    {
+        func(&mut self.composer);
+        if reset_cursor {
+            self.composer.cursor = 0;
+            self.composer.depth = 0;
+            self.composer.state_cursor = 0;
+        }
     }
 }
 
