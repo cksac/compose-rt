@@ -90,6 +90,17 @@ impl Composer {
         let call_id = CallId::from(Location::caller());
         let slot_id = SlotId::new(call_id, key);
 
+        // found in recycle_bin, restore it
+        let slot_group = self.recycle_bin.remove(&slot_id);
+        if let Some(group) = slot_group {
+            let mut curr_idx = state_cursor;
+            // TODO: use gap table?
+            for slot in group {
+                self.state_tape.insert(curr_idx, slot);
+                curr_idx += 1;
+            }
+        }
+
         let cached = self.state_tape.get(state_cursor).map(|s| {
             let data = s.data.as_ref().expect("state slot").as_ref();
             (s.id, s.size, data)
