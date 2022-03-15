@@ -156,7 +156,7 @@ impl Composer {
         assert!(id == self.id && self.composing, "Composer changed");
         result
     }
-    
+
     #[track_caller]
     pub fn remember<Node>(&mut self, val: Node) -> Node
     where
