@@ -33,7 +33,7 @@ impl Recomposer {
             .and_then(|n| n.as_any_mut().downcast_mut::<R>())
     }
 
-    pub fn composer(&mut self) -> &mut Composer {
+    pub fn cx(&mut self) -> &mut Composer {
         &mut self.composer
     }
 

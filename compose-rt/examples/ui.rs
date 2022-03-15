@@ -58,7 +58,7 @@ fn main() {
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
-    root_fn(recomposer.composer(), &movies);
+    root_fn(recomposer.cx(), &movies);
 
     // end compose
     recomposer.finalize();
@@ -74,7 +74,7 @@ fn main() {
         Movie::new(3, "C", "IMG_C"),
         Movie::new(2, "B", "IMG_B"),
     ];
-    root_fn(recomposer.composer(), &movies);
+    root_fn(recomposer.cx(), &movies);
 
     recomposer.finalize();
     // end compose, Recomposer allow you to access root
