@@ -1,6 +1,7 @@
 use crate::{CallId, Slot, SlotId};
 use downcast_rs::{impl_downcast, Downcast};
-use log::trace;
+use log::Level::Trace;
+use log::{log_enabled, trace};
 use std::{
     any::{type_name, TypeId},
     collections::HashMap,
@@ -119,18 +120,22 @@ impl Composer {
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if slot_id == p_slot_id {
                 if let Some(node) = p_data.as_any().downcast_ref::<Node>() {
-                    trace!("{: >15} {} - {:?}", "get_state", curr_cursor, slot_id,);
+                    if log_enabled!(Trace) {
+                        trace!("{: >15} {} - {:?}", "get_state", curr_cursor, slot_id);
+                    }
                     return node.clone();
                 }
             }
             // move previous cached slot to recycle bin
-            trace!(
-                "{: >15} {} - {:?} - {:?}",
-                "recycle_state",
-                curr_cursor,
-                p_slot_id,
-                p_data.type_id()
-            );
+            if log_enabled!(Trace) {
+                trace!(
+                    "{: >15} {} - {:?} - {:?}",
+                    "recycle_state",
+                    curr_cursor,
+                    p_slot_id,
+                    p_data.type_id()
+                );
+            }
             let slot_end = curr_cursor + p_size;
             let slots = self.state_tape.drain(curr_cursor..slot_end).collect();
             self.recycle_bin.insert(p_slot_id, slots);
@@ -138,13 +143,15 @@ impl Composer {
 
         let node = Box::new(val.clone());
         let slot: Slot<Box<dyn ComposeNode>> = Slot::new(slot_id, node);
-        trace!(
-            "{: >15} {} - {:?} - {:?}",
-            "insert_state",
-            curr_cursor,
-            slot_id,
-            self.state_tape.len()
-        );
+        if log_enabled!(Trace) {
+            trace!(
+                "{: >15} {} - {:?} - {:?}",
+                "insert_state",
+                curr_cursor,
+                slot_id,
+                self.state_tape.len()
+            );
+        }
         self.state_tape.insert(curr_cursor, slot);
 
         val
@@ -336,23 +343,27 @@ impl Composer {
                 let slot_data = slot.data.as_mut().expect("slot data").as_mut();
                 if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
                     // use slot
-                    trace!(
-                        "C{: >6}:{}{} | {:?} | {:?}",
-                        curr_cursor,
-                        "  ".repeat(self.depth),
-                        type_name::<Node>(),
-                        TypeId::of::<Node>(),
-                        curr_slot_id
-                    );
-                    if skip(node) {
+                    if log_enabled!(Trace) {
                         trace!(
-                            "S{: >6}:{}{} | {:?} | {:?}",
+                            "C{: >6}:{}{} | {:?} | {:?}",
                             curr_cursor,
                             "  ".repeat(self.depth),
                             type_name::<Node>(),
                             TypeId::of::<Node>(),
                             curr_slot_id
                         );
+                    }
+                    if skip(node) {
+                        if log_enabled!(Trace) {
+                            trace!(
+                                "S{: >6}:{}{} | {:?} | {:?}",
+                                curr_cursor,
+                                "  ".repeat(self.depth),
+                                type_name::<Node>(),
+                                TypeId::of::<Node>(),
+                                curr_slot_id
+                            );
+                        }
                         // skip to slot end
                         self.cursor = curr_cursor + slot.size;
                     } else {
@@ -366,16 +377,16 @@ impl Composer {
                             use_children(node, cn);
                         }
                         update(node);
-
-                        trace!(
-                            "U{: >6}:{}{} | {:?} | {:?}",
-                            curr_cursor,
-                            "  ".repeat(self.depth),
-                            type_name::<Node>(),
-                            TypeId::of::<Node>(),
-                            curr_slot_id
-                        );
-
+                        if log_enabled!(Trace) {
+                            trace!(
+                                "U{: >6}:{}{} | {:?} | {:?}",
+                                curr_cursor,
+                                "  ".repeat(self.depth),
+                                type_name::<Node>(),
+                                TypeId::of::<Node>(),
+                                curr_slot_id
+                            );
+                        }
                         // update new slot size after children fn done
                         slot.size = self.cursor - curr_cursor;
                     }
@@ -386,28 +397,32 @@ impl Composer {
             }
             // if curr_slot_id != cached slot id and type mismatch
             // move cached slot to recycle bin
-            trace!(
-                "-{: >6}:{}{:?} | {:?} | {:?}",
-                curr_cursor,
-                "  ".repeat(self.depth),
-                slot.data.as_ref().expect("slot data").type_id(),
-                slot.id,
-                slot.size
-            );
+            if log_enabled!(Trace) {
+                trace!(
+                    "-{: >6}:{}{:?} | {:?} | {:?}",
+                    curr_cursor,
+                    "  ".repeat(self.depth),
+                    slot.data.as_ref().expect("slot data").type_id(),
+                    slot.id,
+                    slot.size
+                );
+            }
             let slot_end = curr_cursor + slot.size;
             let slots = self.tape.drain(curr_cursor..slot_end).collect();
             self.recycle_bin.insert(slot.id, slots);
         }
 
         // if new or cache miss, insert slot
-        trace!(
-            "+{: >6}:{}{} | {:?} | {:?}",
-            curr_cursor,
-            "  ".repeat(self.depth),
-            type_name::<Node>(),
-            TypeId::of::<Node>(),
-            curr_slot_id
-        );
+        if log_enabled!(Trace) {
+            trace!(
+                "+{: >6}:{}{} | {:?} | {:?}",
+                curr_cursor,
+                "  ".repeat(self.depth),
+                type_name::<Node>(),
+                TypeId::of::<Node>(),
+                curr_slot_id
+            );
+        }
         let slot = Slot::placeholder(curr_slot_id);
         self.tape.insert(curr_cursor, slot);
 
@@ -430,16 +445,17 @@ impl Composer {
         slot.data = Some(data);
         slot.size = self.cursor - curr_cursor;
 
-        // TODO: can skip check when not in trace?
-        if slot.size > 1 {
-            trace!(
-                "+{: >6}:{}{} | {:?} | {:?}",
-                curr_cursor,
-                "  ".repeat(self.depth),
-                type_name::<Node>(),
-                TypeId::of::<Node>(),
-                curr_slot_id
-            );
+        if log_enabled!(Trace) {
+            if slot.size > 1 {
+                trace!(
+                    "+{: >6}:{}{} | {:?} | {:?}",
+                    curr_cursor,
+                    "  ".repeat(self.depth),
+                    type_name::<Node>(),
+                    TypeId::of::<Node>(),
+                    curr_slot_id
+                );
+            }
         }
         self.depth -= 1;
         out
