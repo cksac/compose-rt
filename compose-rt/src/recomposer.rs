@@ -40,7 +40,10 @@ impl Recomposer {
         let id = self.composer.id;
         self.composer.composing = true;
         let t = func(&mut self.composer);
-        assert!(id == self.composer.id, "Composer changed");
+        assert!(
+            id == self.composer.id && self.composer.composing,
+            "Composer changed"
+        );
 
         self.finalize();
         t
