@@ -5,7 +5,7 @@
 
 A positional memoization runtime similar to Jetpack Compose Runtime.
 
-# Use cases of compose-rt
+# use cases of compose-rt
 - Declarative GUI
     - https://github.com/cksac/oxui, an experiment GUI framework similar to Flutter
 - Incremental automatic differentiation
