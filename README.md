@@ -11,7 +11,7 @@ Below example show how to build a declarative GUI using compose-rt
 
 ```toml
 [dependencies]
-compose-rt = "0.8"
+compose-rt = "0.9"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
