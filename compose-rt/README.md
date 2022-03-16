@@ -18,7 +18,7 @@ Below example show how to build a declarative GUI similar to Jetpack Compose UI
 
 ```toml
 [dependencies]
-compose-rt = "0.9"
+compose-rt = "0.10"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
@@ -67,7 +67,7 @@ pub fn MovieOverview(movie: &Movie) {
         Image(cx, &movie.img_url);
         RandomRenderObject(cx, &movie.name);
 
-        let count = cx.remember(Rc::new(RefCell::new(0usize)));
+        let count = cx.remember(|| Rc::new(RefCell::new(0usize)));
         Text(cx, format!("compose count {}", count.borrow()));
         *count.borrow_mut() += 1;
     });

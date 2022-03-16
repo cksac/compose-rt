@@ -67,16 +67,18 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn state<Node>(&mut self, val: Node) -> Node
+    pub fn state<F, Node>(&mut self, factory: F) -> Node
     where
+        F: FnOnce() -> Node,
         Node: ComposeNode + Clone,
     {
-        self.state_with(None, val)
+        self.state_with(None, factory)
     }
 
     #[track_caller]
-    pub fn state_with<Node>(&mut self, key: Option<usize>, val: Node) -> Node
+    pub fn state_with<F, Node>(&mut self, key: Option<usize>, factory: F) -> Node
     where
+        F: FnOnce() -> Node,
         Node: ComposeNode + Clone,
     {
         // save current states
@@ -136,6 +138,7 @@ impl Composer {
             self.recycle_bin.insert(p_slot_id, slots);
         }
 
+        let val = factory();
         let node = Box::new(val.clone());
         let slot: Slot<Box<dyn ComposeNode>> = Slot::new(curr_slot_id, node);
         if log_enabled!(Trace) {
@@ -149,7 +152,6 @@ impl Composer {
             );
         }
         self.state_tape.insert(curr_cursor, slot);
-
         val
     }
 
@@ -168,17 +170,18 @@ impl Composer {
         assert!(
             // len >= curr_cursor, if func don't create any slot
             id == self.id && self.composing && self.tape.len() >= curr_cursor,
-            "Composer in inconsistent state"
+            "Composer is in inconsistent state"
         );
         result
     }
 
     #[track_caller]
-    pub fn remember<Node>(&mut self, val: Node) -> Node
+    pub fn remember<F, Node>(&mut self, factory: F) -> Node
     where
+        F: FnOnce() -> Node,
         Node: ComposeNode + Clone,
     {
-        self.memo(|_| val, |_| true, |_| {}, |n| n.clone())
+        self.memo(|_| factory(), |_| true, |_| {}, |n| n.clone())
     }
 
     #[track_caller]
@@ -420,7 +423,7 @@ impl Composer {
             let node = Box::new(factory(self));
             assert!(
                 id == self.id && self.composing && self.tape.len() > curr_cursor,
-                "Composer in inconsistent state"
+                "Composer is in inconsistent state"
             );
             // update current slot data to return of factory
             self.tape[curr_cursor].data = node;
@@ -442,7 +445,7 @@ impl Composer {
         let c = children(self);
         assert!(
             id == self.id && self.composing && self.tape.len() > curr_cursor,
-            "Composer in inconsistent state"
+            "Composer is in inconsistent state"
         );
 
         let child_start = curr_cursor + 1;
