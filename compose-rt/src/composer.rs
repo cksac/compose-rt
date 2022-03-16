@@ -344,17 +344,6 @@ impl Composer {
                 if curr_slot_id == slot.id {
                     let slot_data = slot.data.as_mut();
                     if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
-                        // use slot
-                        if log_enabled!(Trace) {
-                            trace!(
-                                "C{: >6}:{}{} | {:?} | {:?}",
-                                curr_cursor,
-                                "  ".repeat(self.depth),
-                                type_name::<Node>(),
-                                TypeId::of::<Node>(),
-                                curr_slot_id
-                            );
-                        }
                         (true, true, skip(node))
                     } else {
                         (true, false, false)
@@ -416,16 +405,6 @@ impl Composer {
 
         // call factory if not exist or mismatch
         if !cache_check.0 || !cache_check.1 {
-            if log_enabled!(Trace) {
-                trace!(
-                    "+{: >6}:{}{} | {:?} | {:?}",
-                    curr_cursor,
-                    "  ".repeat(self.depth),
-                    type_name::<Node>(),
-                    TypeId::of::<Node>(),
-                    curr_slot_id
-                );
-            }
             self.tape.insert(
                 curr_cursor,
                 Slot::new(curr_slot_id, Box::new(SlotPlaceHolder)),
@@ -437,6 +416,22 @@ impl Composer {
             );
             // update current slot data to return of factory
             self.tape[curr_cursor].data = node;
+        }
+
+        if log_enabled!(Trace) {
+            trace!(
+                "{}{: >6}:{}{} | {:?} | {:?}",
+                if cache_check.0 && cache_check.1 {
+                    "C"
+                } else {
+                    "+"
+                },
+                curr_cursor,
+                "  ".repeat(self.depth),
+                type_name::<Node>(),
+                TypeId::of::<Node>(),
+                curr_slot_id
+            );
         }
 
         // new or update case
@@ -469,11 +464,13 @@ impl Composer {
             use_children(node, cn);
         }
         update(node);
+        // update new slot size after children fn done
+        slot.size = self.cursor - curr_cursor;
         if log_enabled!(Trace) && slot.size > 1 {
             trace!(
                 "{}{: >6}:{}{} | {:?} | {:?}",
                 if cache_check.0 && cache_check.1 {
-                    "U"
+                    "C"
                 } else {
                     "+"
                 },
@@ -484,8 +481,6 @@ impl Composer {
                 curr_slot_id
             );
         }
-        // update new slot size after children fn done
-        slot.size = self.cursor - curr_cursor;
         self.depth -= 1;
         output(node)
     }
