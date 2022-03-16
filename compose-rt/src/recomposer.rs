@@ -40,15 +40,21 @@ impl Recomposer {
     {
         let composer = &mut self.composer;
         let id = composer.id;
+        let curr_cursor = composer.cursor;
         composer.composing = true;
         let t = func(composer);
-        assert!(id == composer.id && composer.composing, "Composer changed");
+        assert!(
+            // len >= curr_cursor, if func don't create any slot
+            id == composer.id && composer.composing && composer.tape.len() >= curr_cursor,
+            "Composer is in inconsistent state"
+        );
         self.finalize();
         t
     }
 
     fn finalize(&mut self) {
         let composer = &mut self.composer;
+        // TODO: move all extra slots to recycle_bin and allow user to decide housekeeping or not?
         composer.tape.truncate(composer.cursor);
         composer.slot_depth.truncate(composer.cursor);
         composer.state_tape.truncate(composer.state_cursor);
