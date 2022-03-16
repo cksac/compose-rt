@@ -5,10 +5,12 @@
 
 A positional memoization runtime similar to Jetpack Compose Runtime.
 
+>What this means is that Compose is, at its core, a general-purpose tool for managing a tree of nodes of any type. Well a “tree of nodes” describes just about anything, and as a result Compose can target just about anything. – [jakewharton](https://jakewharton.com/a-jetpack-compose-by-any-other-name/)
+
 # use cases of compose-rt
 - Declarative GUI
     - https://github.com/cksac/oxui, an experiment GUI framework similar to Flutter
-- Incremental automatic differentiation
+- Automatic differentiation
 - Others...
 
 # example
