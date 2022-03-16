@@ -22,7 +22,7 @@ impl Recomposer {
         self.composer
             .tape
             .get(0)
-            .and_then(|s| s.data.as_ref())
+            .map(|s| &s.data)
             .and_then(|n| n.as_any().downcast_ref::<R>())
     }
 
@@ -30,7 +30,7 @@ impl Recomposer {
         self.composer
             .tape
             .get_mut(0)
-            .and_then(|s| s.data.as_mut())
+            .map(|s| &mut s.data)
             .and_then(|n| n.as_any_mut().downcast_mut::<R>())
     }
 

@@ -16,6 +16,9 @@ impl<T: Debug + Downcast> ComposeNode for T {}
 
 type Tape = Vec<Slot<Box<dyn ComposeNode>>>;
 
+#[derive(Debug, Clone, Copy)]
+struct SlotPlaceHolder;
+
 static COMPOSER_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]
@@ -98,7 +101,7 @@ impl Composer {
         }
 
         let cached = self.state_tape.get(curr_cursor).map(|s| {
-            let data = s.data.as_ref().expect("state slot").as_ref();
+            let data = s.data.as_ref();
             (s.id, s.size, data)
         });
 
@@ -148,12 +151,17 @@ impl Composer {
         F: FnOnce(&mut Composer) -> T,
     {
         let id = self.id;
+        let curr_cursor = self.cursor;
 
         // set the key of first encountered group
         self.slot_key = Some(key);
 
         let result = func(self);
-        assert!(id == self.id && self.composing, "Composer changed");
+        assert!(
+            // it will not forward cursor if func don't create any slot
+            id == self.id && self.composing && self.tape.len() >= curr_cursor,
+            "Composer changed"
+        );
         result
     }
 
@@ -319,44 +327,27 @@ impl Composer {
         }
 
         // found in recycle_bin, restore it to curr_cursor
-        let slot_group = self.recycle_bin.remove(&curr_slot_id);
-        if let Some(group) = slot_group {
+        if let Some(slots) = self.recycle_bin.remove(&curr_slot_id) {
             let mut curr_idx = curr_cursor;
             // TODO: use gap table?
-            for slot in group {
+            for slot in slots {
                 self.tape.insert(curr_idx, slot);
                 curr_idx += 1;
             }
         }
 
-        // use slot data in current cursor if slot id and type match
-        let cached = self.tape.get_mut(curr_cursor).map(|slot| {
-            // `Composer` required to guarantee `content` function not able to access current slot in self.tape
-            let slot_ptr = slot as *mut Slot<Box<dyn ComposeNode>>;
-            unsafe { &mut *slot_ptr }
-        });
-
-        if let Some(slot) = cached {
-            // slot id match
-            if curr_slot_id == slot.id {
-                // node type match
-                let slot_data = slot.data.as_mut().expect("slot data").as_mut();
-                if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
-                    // use slot
-                    if log_enabled!(Trace) {
-                        trace!(
-                            "C{: >6}:{}{} | {:?} | {:?}",
-                            curr_cursor,
-                            "  ".repeat(self.depth),
-                            type_name::<Node>(),
-                            TypeId::of::<Node>(),
-                            curr_slot_id
-                        );
-                    }
-                    if skip(node) {
+        // cache_check: (is_exist, is_match, is_skip)
+        let cache_check = self
+            .tape
+            .get_mut(curr_cursor)
+            .map(|slot| {
+                if curr_slot_id == slot.id {
+                    let slot_data = slot.data.as_mut();
+                    if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
+                        // use slot
                         if log_enabled!(Trace) {
                             trace!(
-                                "S{: >6}:{}{} | {:?} | {:?}",
+                                "C{: >6}:{}{} | {:?} | {:?}",
                                 curr_cursor,
                                 "  ".repeat(self.depth),
                                 type_name::<Node>(),
@@ -364,89 +355,68 @@ impl Composer {
                                 curr_slot_id
                             );
                         }
-                        // skip to slot end
-                        self.cursor = curr_cursor + slot.size;
+                        (true, true, skip(node))
                     } else {
-                        // rerun
-                        let c = children(self);
-                        assert!(id == self.id && self.composing, "Composer changed");
-
-                        apply_children(node, c);
-                        if require_use_children {
-                            let cn = self.children_of_slot_at(curr_cursor);
-                            use_children(node, cn);
-                        }
-                        update(node);
-                        if log_enabled!(Trace) {
-                            trace!(
-                                "U{: >6}:{}{} | {:?} | {:?}",
-                                curr_cursor,
-                                "  ".repeat(self.depth),
-                                type_name::<Node>(),
-                                TypeId::of::<Node>(),
-                                curr_slot_id
-                            );
-                        }
-                        // update new slot size after children fn done
-                        slot.size = self.cursor - curr_cursor;
+                        (true, false, false)
                     }
-
-                    self.depth -= 1;
-                    return output(node);
+                } else {
+                    (true, false, false)
                 }
-            }
-            // if curr_slot_id != cached slot id and type mismatch
-            // move cached slot to recycle bin
+            })
+            .unwrap_or((false, false, false));
+
+        // exist but cache miss
+        if cache_check.0 && !cache_check.1 {
+            // move current cached slot to recycle bin
+            let p_slot = self.tape.get(curr_cursor).expect("slot");
+            let p_ty_id = p_slot.data.as_ref().type_id();
+            let p_slot_id = p_slot.id;
+            let p_slot_size = p_slot.size;
+
             if log_enabled!(Trace) {
                 trace!(
                     "-{: >6}:{}{:?} | {:?} | {:?}",
                     curr_cursor,
                     "  ".repeat(self.depth),
-                    slot.data.as_ref().expect("slot data").type_id(),
-                    slot.id,
-                    slot.size
+                    p_ty_id,
+                    p_slot_id,
+                    p_slot_size
                 );
             }
-            let slot_end = curr_cursor + slot.size;
-            let slots = self.tape.drain(curr_cursor..slot_end).collect();
-            self.recycle_bin.insert(slot.id, slots);
+            let slot_end = curr_cursor + p_slot_size;
+            let slots: Tape = self.tape.drain(curr_cursor..slot_end).collect();
+            self.recycle_bin.insert(p_slot_id, slots);
         }
 
-        // if new or cache miss, insert slot
-        if log_enabled!(Trace) {
-            trace!(
-                "+{: >6}:{}{} | {:?} | {:?}",
-                curr_cursor,
-                "  ".repeat(self.depth),
-                type_name::<Node>(),
-                TypeId::of::<Node>(),
-                curr_slot_id
-            );
+        // exist and cache hit and skip
+        if cache_check.0 && cache_check.1 && cache_check.2 {
+            if log_enabled!(Trace) {
+                trace!(
+                    "S{: >6}:{}{} | {:?} | {:?}",
+                    curr_cursor,
+                    "  ".repeat(self.depth),
+                    type_name::<Node>(),
+                    TypeId::of::<Node>(),
+                    curr_slot_id
+                );
+            }
+
+            let slot = self.tape.get_mut(curr_cursor).expect("slot");
+            let slot_data = slot.data.as_mut();
+            let node = slot_data
+                .as_any_mut()
+                .downcast_mut::<Node>()
+                .expect("downcast node");
+
+            // skip to slot end
+            self.cursor = curr_cursor + slot.size;
+            self.depth -= 1;
+            return output(node);
         }
-        let slot = Slot::placeholder(curr_slot_id);
-        self.tape.insert(curr_cursor, slot);
 
-        let mut node = factory(self);
-        assert!(id == self.id && self.composing, "Composer changed");
-
-        let c = children(self);
-        assert!(id == self.id && self.composing, "Composer changed");
-
-        apply_children(&mut node, c);
-        if require_use_children {
-            let cn = self.children_of_slot_at(curr_cursor);
-            use_children(&mut node, cn);
-        }
-
-        let out = output(&node);
-        let data = Box::new(node);
-
-        let slot = self.tape.get_mut(curr_cursor).expect("slot");
-        slot.data = Some(data);
-        slot.size = self.cursor - curr_cursor;
-
-        if log_enabled!(Trace) {
-            if slot.size > 1 {
+        // call factory if not exist or mismatch
+        if !cache_check.0 || !cache_check.1 {
+            if log_enabled!(Trace) {
                 trace!(
                     "+{: >6}:{}{} | {:?} | {:?}",
                     curr_cursor,
@@ -456,30 +426,67 @@ impl Composer {
                     curr_slot_id
                 );
             }
+            self.tape.insert(
+                curr_cursor,
+                Slot::new(curr_slot_id, Box::new(SlotPlaceHolder)),
+            );
+            let node = Box::new(factory(self));
+            assert!(
+                id == self.id && self.composing && self.tape.len() > curr_cursor,
+                "Composer changed"
+            );
+            // update current slot data to return of factory
+            self.tape[curr_cursor].data = node;
         }
-        self.depth -= 1;
-        out
-    }
 
-    fn children_of_slot_at(&mut self, cursor: usize) -> Vec<&dyn ComposeNode> {
-        let child_start = cursor + 1;
-        let children = self.slot_depth[child_start..self.cursor]
-            .iter()
-            .cloned()
-            .enumerate()
-            .filter_map(|(i, v)| {
-                if v == self.depth {
-                    Some(child_start + i)
+        // new or update case
+        let c = children(self);
+        assert!(
+            id == self.id && self.composing && self.tape.len() > curr_cursor,
+            "Composer changed"
+        );
+
+        let child_start = curr_cursor + 1;
+        let (head_slots, tail_slots) = self.tape.split_at_mut(child_start);
+
+        let slot = head_slots.last_mut().expect("slot");
+        let slot_data = slot.data.as_mut();
+        let node = slot_data
+            .as_any_mut()
+            .downcast_mut::<Node>()
+            .expect("downcast node");
+
+        apply_children(node, c);
+        if require_use_children {
+            let child_depth = curr_depth + 1;
+            let cn = self.slot_depth[child_start..self.cursor]
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter_map(|(i, v)| if v == child_depth { Some(i) } else { None })
+                .filter_map(|c| tail_slots.get(c).map(|s| s.data.as_ref()))
+                .collect();
+            use_children(node, cn);
+        }
+        update(node);
+        if log_enabled!(Trace) && slot.size > 1 {
+            trace!(
+                "{}{: >6}:{}{} | {:?} | {:?}",
+                if cache_check.0 && cache_check.1 {
+                    "U"
                 } else {
-                    None
-                }
-            })
-            .filter_map(|c| {
-                self.tape
-                    .get(c)
-                    .map(|s| s.data.as_ref().expect("slot data").as_ref())
-            })
-            .collect();
-        children
+                    "+"
+                },
+                curr_cursor,
+                "  ".repeat(self.depth),
+                type_name::<Node>(),
+                TypeId::of::<Node>(),
+                curr_slot_id
+            );
+        }
+        // update new slot size after children fn done
+        slot.size = self.cursor - curr_cursor;
+        self.depth -= 1;
+        output(node)
     }
 }
