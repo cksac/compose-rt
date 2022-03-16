@@ -3,11 +3,16 @@
 [![Docs Status](https://docs.rs/compose-rt/badge.svg)](https://docs.rs/compose-rt)
 [![Latest Version](https://img.shields.io/crates/v/compose-rt.svg)](https://crates.io/crates/compose-rt)
 
-A positional memoization runtime similar to Jetpack Compose Runtime. 
+A positional memoization runtime similar to Jetpack Compose Runtime.
 
+# Usage case of compose-rt
+- Declarative GUI
+    - https://github.com/cksac/oxui, an experiment GUI framework similar to Flutter
+- Incremental automatic differentiation
+- Others...
 
 # example
-Below example show how to build a declarative GUI using compose-rt
+Below example show how to build a declarative GUI similar to Jetpack Compose UI
 
 ```toml
 [dependencies]
