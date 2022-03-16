@@ -87,14 +87,13 @@ impl Composer {
 
         // construct slot id
         let call_id = CallId::from(Location::caller());
-        let slot_id = SlotId::new(call_id, key);
+        let curr_slot_id = SlotId::new(call_id, key);
 
         // found in recycle_bin, restore it to current cursor
-        let slot_group = self.recycle_bin.remove(&slot_id);
-        if let Some(group) = slot_group {
+        if let Some(slots) = self.recycle_bin.remove(&curr_slot_id) {
             let mut curr_idx = curr_cursor;
             // TODO: use gap table?
-            for slot in group {
+            for slot in slots {
                 self.state_tape.insert(curr_idx, slot);
                 curr_idx += 1;
             }
@@ -106,10 +105,17 @@ impl Composer {
         });
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
-            if slot_id == p_slot_id {
+            if curr_slot_id == p_slot_id {
                 if let Some(node) = p_data.as_any().downcast_ref::<Node>() {
                     if log_enabled!(Trace) {
-                        trace!("{: >15} {} - {:?}", "get_state", curr_cursor, slot_id);
+                        trace!(
+                            "{}:{}{} | {:?} | {:?}",
+                            format!("{}{: >6}", "cs", curr_cursor),
+                            "  ".repeat(self.depth),
+                            type_name::<Node>(),
+                            TypeId::of::<Node>(),
+                            curr_slot_id
+                        );
                     }
                     return node.clone();
                 }
@@ -117,11 +123,12 @@ impl Composer {
             // move previous cached slot to recycle bin
             if log_enabled!(Trace) {
                 trace!(
-                    "{: >15} {} - {:?} - {:?}",
-                    "recycle_state",
-                    curr_cursor,
-                    p_slot_id,
-                    p_data.type_id()
+                    "{}:{}{} | {:?} | {:?}",
+                    format!("{}{: >6}", "-s", curr_cursor),
+                    "  ".repeat(self.depth),
+                    type_name::<Node>(),
+                    TypeId::of::<Node>(),
+                    curr_slot_id
                 );
             }
             let slot_end = curr_cursor + p_size;
@@ -130,14 +137,15 @@ impl Composer {
         }
 
         let node = Box::new(val.clone());
-        let slot: Slot<Box<dyn ComposeNode>> = Slot::new(slot_id, node);
+        let slot: Slot<Box<dyn ComposeNode>> = Slot::new(curr_slot_id, node);
         if log_enabled!(Trace) {
             trace!(
-                "{: >15} {} - {:?} - {:?}",
-                "insert_state",
-                curr_cursor,
-                slot_id,
-                self.state_tape.len()
+                "{}:{}{} | {:?} | {:?}",
+                format!("{}{: >6}", "+s", curr_cursor),
+                "  ".repeat(self.depth),
+                type_name::<Node>(),
+                TypeId::of::<Node>(),
+                curr_slot_id
             );
         }
         self.state_tape.insert(curr_cursor, slot);
@@ -153,14 +161,14 @@ impl Composer {
         let id = self.id;
         let curr_cursor = self.cursor;
 
-        // set the key of first encountered group
+        // set the key of next encountered slot
         self.slot_key = Some(key);
 
         let result = func(self);
         assert!(
-            // it will not forward cursor if func don't create any slot
+            // len >= curr_cursor, if func don't create any slot
             id == self.id && self.composing && self.tape.len() >= curr_cursor,
-            "Composer changed"
+            "Composer in inconsistent state"
         );
         result
     }
@@ -336,8 +344,8 @@ impl Composer {
             }
         }
 
-        // cache_check: (is_exist, is_match, is_skip)
-        let cache_check = self
+        // cache and skip check
+        let (is_exist, is_match, is_skip) = self
             .tape
             .get_mut(curr_cursor)
             .map(|slot| {
@@ -355,7 +363,7 @@ impl Composer {
             .unwrap_or((false, false, false));
 
         // exist but cache miss
-        if cache_check.0 && !cache_check.1 {
+        if is_exist && !is_match {
             // move current cached slot to recycle bin
             let p_slot = self.tape.get(curr_cursor).expect("slot");
             let p_ty_id = p_slot.data.as_ref().type_id();
@@ -364,7 +372,7 @@ impl Composer {
 
             if log_enabled!(Trace) {
                 trace!(
-                    "-{: >6}:{}{:?} | {:?} | {:?}",
+                    "-{: >7}:{}{:?} | {:?} | {:?}",
                     curr_cursor,
                     "  ".repeat(self.depth),
                     p_ty_id,
@@ -378,10 +386,10 @@ impl Composer {
         }
 
         // exist and cache hit and skip
-        if cache_check.0 && cache_check.1 && cache_check.2 {
+        if is_exist && is_match && is_skip {
             if log_enabled!(Trace) {
                 trace!(
-                    "S{: >6}:{}{} | {:?} | {:?}",
+                    "S{: >7}:{}{} | {:?} | {:?}",
                     curr_cursor,
                     "  ".repeat(self.depth),
                     type_name::<Node>(),
@@ -404,7 +412,7 @@ impl Composer {
         }
 
         // call factory if not exist or mismatch
-        if !cache_check.0 || !cache_check.1 {
+        if !is_exist || !is_match {
             self.tape.insert(
                 curr_cursor,
                 Slot::new(curr_slot_id, Box::new(SlotPlaceHolder)),
@@ -412,7 +420,7 @@ impl Composer {
             let node = Box::new(factory(self));
             assert!(
                 id == self.id && self.composing && self.tape.len() > curr_cursor,
-                "Composer changed"
+                "Composer in inconsistent state"
             );
             // update current slot data to return of factory
             self.tape[curr_cursor].data = node;
@@ -420,12 +428,8 @@ impl Composer {
 
         if log_enabled!(Trace) {
             trace!(
-                "{}{: >6}:{}{} | {:?} | {:?}",
-                if cache_check.0 && cache_check.1 {
-                    "C"
-                } else {
-                    "+"
-                },
+                "{}{: >7}:{}{} | {:?} | {:?}",
+                if is_exist && is_match { "C" } else { "+" },
                 curr_cursor,
                 "  ".repeat(self.depth),
                 type_name::<Node>(),
@@ -438,7 +442,7 @@ impl Composer {
         let c = children(self);
         assert!(
             id == self.id && self.composing && self.tape.len() > curr_cursor,
-            "Composer changed"
+            "Composer in inconsistent state"
         );
 
         let child_start = curr_cursor + 1;
@@ -468,12 +472,8 @@ impl Composer {
         slot.size = self.cursor - curr_cursor;
         if log_enabled!(Trace) && slot.size > 1 {
             trace!(
-                "{}{: >6}:{}{} | {:?} | {:?}",
-                if cache_check.0 && cache_check.1 {
-                    "C"
-                } else {
-                    "+"
-                },
+                "{}{: >7}:{}{} | {:?} | {:?}",
+                if is_exist && is_match { "C" } else { "+" },
                 curr_cursor,
                 "  ".repeat(self.depth),
                 type_name::<Node>(),

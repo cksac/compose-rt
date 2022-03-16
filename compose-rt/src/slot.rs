@@ -83,13 +83,13 @@ impl Debug for SlotId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
             match self.key {
-                Some(key) => f.write_fmt(format_args!("{:#?} |{}", self.call_id, key)),
-                None => f.write_fmt(format_args!("{:#?} |*", self.call_id)),
+                Some(key) => f.write_fmt(format_args!("{:#?} #{}", self.call_id, key)),
+                None => f.write_fmt(format_args!("{:#?}", self.call_id)),
             }
         } else {
             match self.key {
-                Some(key) => f.write_fmt(format_args!("{:?} |{}", self.call_id, key)),
-                None => f.write_fmt(format_args!("{:?} |*", self.call_id)),
+                Some(key) => f.write_fmt(format_args!("{:?} #{}", self.call_id, key)),
+                None => f.write_fmt(format_args!("{:?}", self.call_id)),
             }
         }
     }
