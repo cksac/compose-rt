@@ -288,7 +288,7 @@ impl Composer {
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
         C: FnOnce(&mut Composer),
-        UC: FnOnce(&mut Node, ChildrenView),
+        UC: FnOnce(&mut Node, NodeChildren),
         S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
@@ -323,7 +323,7 @@ impl Composer {
         Node: ComposeNode,
         C: FnOnce(&mut Composer) -> Children,
         AC: FnOnce(&mut Node, Children),
-        UC: FnOnce(&mut Node, ChildrenView),
+        UC: FnOnce(&mut Node, NodeChildren),
         S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
@@ -474,12 +474,12 @@ impl Composer {
 
         apply_children(node, c);
         if require_use_children {
-            let children_view = ChildrenView {
+            let node_children = NodeChildren {
                 tape: &mut tail_slots[..slot.size - 1],
                 slot_depth: &self.slot_depth[child_start..self.cursor],
                 depth: curr_depth + 1,
             };
-            use_children(node, children_view);
+            use_children(node, node_children);
         }
         update(node);
 
@@ -499,23 +499,26 @@ impl Composer {
     }
 }
 
-pub struct ChildrenView<'a> {
-    pub(crate) tape: &'a [Slot<Box<dyn ComposeNode>>],
+pub struct NodeChildren<'a> {
+    pub(crate) tape: &'a mut [Slot<Box<dyn ComposeNode>>],
     pub(crate) slot_depth: &'a [usize],
     pub(crate) depth: usize,
 }
 
-impl<'a> ChildrenView<'a> {
+impl<'a> NodeChildren<'a> {
     pub fn iter(&self) -> impl Iterator<Item = &dyn ComposeNode> {
-        self.slot_depth
+        self.tape
             .iter()
-            .cloned()
-            .enumerate()
-            .filter_map(|(i, v)| if v == self.depth { Some(i) } else { None })
-            .filter_map(|c| self.tape.get(c).map(|s| s.data.as_ref()))
+            .zip(self.slot_depth)
+            .filter(|(_, d)| **d == self.depth)
+            .map(|(s, _)| s.data.as_ref())
     }
 
-    pub fn with_ty<Node: 'static>(&self) -> impl Iterator<Item = &Node> {
-        self.iter().filter_map(|c| c.cast_ref::<Node>())
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut dyn ComposeNode> {
+        self.tape
+            .iter_mut()
+            .zip(self.slot_depth)
+            .filter(|(_, d)| **d == self.depth)
+            .map(|(s, _)| s.data.as_mut())
     }
 }
