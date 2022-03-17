@@ -23,7 +23,7 @@ impl Recomposer {
             .tape
             .get(0)
             .map(|s| &s.data)
-            .and_then(|n| n.as_any().downcast_ref::<R>())
+            .and_then(|n| n.cast_ref::<R>())
     }
 
     pub fn root_mut<R: 'static>(&mut self) -> Option<&mut R> {
@@ -31,7 +31,7 @@ impl Recomposer {
             .tape
             .get_mut(0)
             .map(|s| &mut s.data)
-            .and_then(|n| n.as_any_mut().downcast_mut::<R>())
+            .and_then(|n| n.cast_mut::<R>())
     }
 
     pub fn compose<F, T>(&mut self, func: F) -> T
