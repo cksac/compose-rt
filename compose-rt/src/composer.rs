@@ -14,6 +14,18 @@ pub trait ComposeNode: Debug + Downcast {}
 impl_downcast!(ComposeNode);
 impl<T: Debug + Downcast> ComposeNode for T {}
 
+impl dyn ComposeNode {
+    #[inline]
+    pub fn cast_ref<T: 'static>(&self) -> Option<&T> {
+        self.as_any().downcast_ref::<T>()
+    }
+
+    #[inline]
+    pub fn cast_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.as_any_mut().downcast_mut::<T>()
+    }
+}
+
 type Tape = Vec<Slot<Box<dyn ComposeNode>>>;
 
 #[derive(Debug, Clone, Copy)]
@@ -108,7 +120,7 @@ impl Composer {
 
         if let Some((p_slot_id, p_size, p_data)) = cached {
             if curr_slot_id == p_slot_id {
-                if let Some(node) = p_data.as_any().downcast_ref::<Node>() {
+                if let Some(node) = p_data.cast_ref::<Node>() {
                     if log_enabled!(Trace) {
                         trace!(
                             "{}:{}{} | {:?} | {:?}",
@@ -276,7 +288,7 @@ impl Composer {
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
         C: FnOnce(&mut Composer),
-        UC: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
+        UC: FnOnce(&mut Node, ChildrenView),
         S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
@@ -311,7 +323,7 @@ impl Composer {
         Node: ComposeNode,
         C: FnOnce(&mut Composer) -> Children,
         AC: FnOnce(&mut Node, Children),
-        UC: FnOnce(&mut Node, Vec<&dyn ComposeNode>),
+        UC: FnOnce(&mut Node, ChildrenView),
         S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
@@ -353,8 +365,7 @@ impl Composer {
             .get_mut(curr_cursor)
             .map(|slot| {
                 if curr_slot_id == slot.id {
-                    let slot_data = slot.data.as_mut();
-                    if let Some(node) = slot_data.as_any_mut().downcast_mut::<Node>() {
+                    if let Some(node) = slot.data.as_mut().cast_mut::<Node>() {
                         (true, true, skip(node))
                     } else {
                         (true, false, false)
@@ -402,10 +413,10 @@ impl Composer {
             }
 
             let slot = self.tape.get_mut(curr_cursor).expect("slot");
-            let slot_data = slot.data.as_mut();
-            let node = slot_data
-                .as_any_mut()
-                .downcast_mut::<Node>()
+            let node = slot
+                .data
+                .as_mut()
+                .cast_mut::<Node>()
                 .expect("downcast node");
 
             // skip to slot end
@@ -452,27 +463,26 @@ impl Composer {
         let (head_slots, tail_slots) = self.tape.split_at_mut(child_start);
 
         let slot = head_slots.last_mut().expect("slot");
-        let slot_data = slot.data.as_mut();
-        let node = slot_data
-            .as_any_mut()
-            .downcast_mut::<Node>()
+        let node = slot
+            .data
+            .as_mut()
+            .cast_mut::<Node>()
             .expect("downcast node");
+
+        // update new slot size after children fn done
+        slot.size = self.cursor - curr_cursor;
 
         apply_children(node, c);
         if require_use_children {
-            let child_depth = curr_depth + 1;
-            let cn = self.slot_depth[child_start..self.cursor]
-                .iter()
-                .cloned()
-                .enumerate()
-                .filter_map(|(i, v)| if v == child_depth { Some(i) } else { None })
-                .filter_map(|c| tail_slots.get(c).map(|s| s.data.as_ref()))
-                .collect();
-            use_children(node, cn);
+            let children_view = ChildrenView {
+                tape: &mut tail_slots[..slot.size - 1],
+                slot_depth: &self.slot_depth[child_start..self.cursor],
+                depth: curr_depth + 1,
+            };
+            use_children(node, children_view);
         }
         update(node);
-        // update new slot size after children fn done
-        slot.size = self.cursor - curr_cursor;
+
         if log_enabled!(Trace) && slot.size > 1 {
             trace!(
                 "{}{: >7}:{}{} | {:?} | {:?}",
@@ -486,5 +496,26 @@ impl Composer {
         }
         self.depth -= 1;
         output(node)
+    }
+}
+
+pub struct ChildrenView<'a> {
+    pub(crate) tape: &'a [Slot<Box<dyn ComposeNode>>],
+    pub(crate) slot_depth: &'a [usize],
+    pub(crate) depth: usize,
+}
+
+impl<'a> ChildrenView<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = &dyn ComposeNode> {
+        self.slot_depth
+            .iter()
+            .cloned()
+            .enumerate()
+            .filter_map(|(i, v)| if v == self.depth { Some(i) } else { None })
+            .filter_map(|c| self.tape.get(c).map(|s| s.data.as_ref()))
+    }
+
+    pub fn filter<Node: 'static>(&self) -> impl Iterator<Item = &Node> {
+        self.iter().filter_map(|c| c.cast_ref::<Node>())
     }
 }
