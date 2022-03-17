@@ -18,7 +18,7 @@ Below example show how to build a declarative GUI similar to Jetpack Compose UI
 
 ```toml
 [dependencies]
-compose-rt = "0.10"
+compose-rt = "0.11"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
@@ -128,17 +128,14 @@ where
         |node, children| {
             let mut flex = node.borrow_mut();
             flex.children.clear();
-            for child in children {
-                if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderLabel>>>().cloned() {
+            for child in children.iter() {
+                if let Some(c) = child.cast_ref::<Rc<RefCell<RenderLabel>>>().cloned() {
                     flex.children.push(c);
-                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderImage>>>().cloned() {
+                } else if let Some(c) = child.cast_ref::<Rc<RefCell<RenderImage>>>().cloned() {
                     flex.children.push(c);
-                } else if let Some(c) = child.downcast_ref::<Rc<RefCell<RenderFlex>>>().cloned() {
+                } else if let Some(c) = child.cast_ref::<Rc<RefCell<RenderFlex>>>().cloned() {
                     flex.children.push(c);
-                } else if let Some(c) = child
-                    .downcast_ref::<Rc<RefCell<dyn RenderObject>>>()
-                    .cloned()
-                {
+                } else if let Some(c) = child.cast_ref::<Rc<RefCell<dyn RenderObject>>>().cloned() {
                     flex.children.push(c);
                 }
             }
