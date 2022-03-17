@@ -193,7 +193,7 @@ impl Composer {
         F: FnOnce() -> Node,
         Node: ComposeNode + Clone,
     {
-        self.memo(|_| factory(), |_| true, |_| {}, |n| n.clone())
+        self.group(|_| factory(), |_| {}, |_| true, |_, _| {}, |n| n.clone())
     }
 
     #[track_caller]
@@ -211,14 +211,14 @@ impl Composer {
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
-        self.group(factory, |_| {}, skip, update, output)
+        self.group(factory, |_| {}, skip, |n, _| update(n), output)
     }
 
     #[track_caller]
-    pub fn group<F, Node, C, S, U, O, Output>(
+    pub fn group<F, Node, C, CO, S, U, O, Output>(
         &mut self,
         factory: F,
-        children: C,
+        content: C,
         skip: S,
         update: U,
         output: O,
@@ -226,59 +226,19 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        C: FnOnce(&mut Composer),
+        C: FnOnce(&mut Composer) -> CO,
         S: FnOnce(&mut Node) -> bool,
-        U: FnOnce(&mut Node),
+        U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
-        self.slot(
-            factory,
-            children,
-            |_, _| {},
-            false,
-            |_, _| {},
-            skip,
-            update,
-            output,
-        )
+        self.slot(factory, content, false, |_, _| {}, skip, update, output)
     }
 
     #[track_caller]
-    pub fn group_apply_children<F, Node, C, Children, AC, S, U, O, Output>(
+    pub fn group_use_children<F, Node, C, CO, UC, S, U, O, Output>(
         &mut self,
         factory: F,
-        children: C,
-        apply_children: AC,
-        skip: S,
-        update: U,
-        output: O,
-    ) -> Output
-    where
-        F: FnOnce(&mut Composer) -> Node,
-        Node: ComposeNode,
-        C: FnOnce(&mut Composer) -> Children,
-        AC: FnOnce(&mut Node, Children),
-        S: FnOnce(&mut Node) -> bool,
-        U: FnOnce(&mut Node),
-        O: FnOnce(&Node) -> Output,
-    {
-        self.slot(
-            factory,
-            children,
-            apply_children,
-            false,
-            |_, _| {},
-            skip,
-            update,
-            output,
-        )
-    }
-
-    #[track_caller]
-    pub fn group_use_children<F, Node, C, UC, S, U, O, Output>(
-        &mut self,
-        factory: F,
-        children: C,
+        content: C,
         use_children: UC,
         skip: S,
         update: U,
@@ -287,31 +247,21 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        C: FnOnce(&mut Composer),
-        UC: FnOnce(&mut Node, NodeChildren),
+        C: FnOnce(&mut Composer) -> CO,
+        UC: FnOnce(&mut Node, Children),
         S: FnOnce(&mut Node) -> bool,
-        U: FnOnce(&mut Node),
+        U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
-        self.slot(
-            factory,
-            children,
-            |_, _| {},
-            true,
-            use_children,
-            skip,
-            update,
-            output,
-        )
+        self.slot(factory, content, true, use_children, skip, update, output)
     }
 
     #[track_caller]
     #[allow(clippy::too_many_arguments)]
-    pub fn slot<F, Node, C, Children, AC, UC, S, U, O, Output>(
+    pub fn slot<F, Node, C, CO, UC, S, U, O, Output>(
         &mut self,
         factory: F,
-        children: C,
-        apply_children: AC,
+        content: C,
         require_use_children: bool,
         use_children: UC,
         skip: S,
@@ -321,11 +271,10 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        C: FnOnce(&mut Composer) -> Children,
-        AC: FnOnce(&mut Node, Children),
-        UC: FnOnce(&mut Node, NodeChildren),
+        C: FnOnce(&mut Composer) -> CO,
+        UC: FnOnce(&mut Node, Children),
         S: FnOnce(&mut Node) -> bool,
-        U: FnOnce(&mut Node),
+        U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
         // remember current slot states
@@ -453,7 +402,7 @@ impl Composer {
         }
 
         // new or update case
-        let c = children(self);
+        let co = content(self);
         assert!(
             id == self.id && self.composing && self.tape.len() > curr_cursor,
             "Composer is in inconsistent state"
@@ -472,16 +421,15 @@ impl Composer {
         // update new slot size after children fn done
         slot.size = self.cursor - curr_cursor;
 
-        apply_children(node, c);
         if require_use_children {
-            let node_children = NodeChildren {
+            let node_children = Children {
                 tape: &mut tail_slots[..slot.size - 1],
                 slot_depth: &self.slot_depth[child_start..self.cursor],
                 depth: curr_depth + 1,
             };
             use_children(node, node_children);
         }
-        update(node);
+        update(node, co);
 
         if log_enabled!(Trace) && slot.size > 1 {
             trace!(
@@ -499,13 +447,13 @@ impl Composer {
     }
 }
 
-pub struct NodeChildren<'a> {
+pub struct Children<'a> {
     pub(crate) tape: &'a mut [Slot<Box<dyn ComposeNode>>],
     pub(crate) slot_depth: &'a [usize],
     pub(crate) depth: usize,
 }
 
-impl<'a> NodeChildren<'a> {
+impl<'a> Children<'a> {
     pub fn iter(&self) -> impl Iterator<Item = &dyn ComposeNode> {
         self.tape
             .iter()
