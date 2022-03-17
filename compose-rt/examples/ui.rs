@@ -96,6 +96,7 @@ where
 {
     cx.group_use_children(
         |_| Rc::new(RefCell::new(RenderFlex::new())),
+        |_| false,
         content,
         |node, children| {
             let mut flex = node.borrow_mut();
@@ -112,7 +113,6 @@ where
                 }
             }
         },
-        |_| false,
         |_, _| {},
         |_| {},
     );

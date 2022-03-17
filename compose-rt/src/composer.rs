@@ -193,7 +193,7 @@ impl Composer {
         F: FnOnce() -> Node,
         Node: ComposeNode + Clone,
     {
-        self.group(|_| factory(), |_| {}, |_| true, |_, _| {}, |n| n.clone())
+        self.group(|_| factory(), |_| true, |_| {}, |_, _| {}, |n| n.clone())
     }
 
     #[track_caller]
@@ -211,15 +211,15 @@ impl Composer {
         U: FnOnce(&mut Node),
         O: FnOnce(&Node) -> Output,
     {
-        self.group(factory, |_| {}, skip, |n, _| update(n), output)
+        self.group(factory, skip, |_| {}, |n, _| update(n), output)
     }
 
     #[track_caller]
     pub fn group<F, Node, C, CO, S, U, O, Output>(
         &mut self,
         factory: F,
-        content: C,
         skip: S,
+        content: C,
         update: U,
         output: O,
     ) -> Output
@@ -231,29 +231,29 @@ impl Composer {
         U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
-        self.slot(factory, content, false, |_, _| {}, skip, update, output)
+        self.slot(factory, skip, content, false, |_, _| {}, update, output)
     }
 
     #[track_caller]
     pub fn group_use_children<F, Node, C, CO, UC, S, U, O, Output>(
         &mut self,
         factory: F,
+        skip: S,
         content: C,
         use_children: UC,
-        skip: S,
         update: U,
         output: O,
     ) -> Output
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
+        S: FnOnce(&mut Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
         UC: FnOnce(&mut Node, Children),
-        S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
-        self.slot(factory, content, true, use_children, skip, update, output)
+        self.slot(factory, skip, content, true, use_children, update, output)
     }
 
     #[track_caller]
@@ -261,19 +261,19 @@ impl Composer {
     pub fn slot<F, Node, C, CO, UC, S, U, O, Output>(
         &mut self,
         factory: F,
+        skip: S,
         content: C,
         require_use_children: bool,
         use_children: UC,
-        skip: S,
         update: U,
         output: O,
     ) -> Output
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
+        S: FnOnce(&mut Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
         UC: FnOnce(&mut Node, Children),
-        S: FnOnce(&mut Node) -> bool,
         U: FnOnce(&mut Node, CO),
         O: FnOnce(&Node) -> Output,
     {
