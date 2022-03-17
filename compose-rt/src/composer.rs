@@ -447,6 +447,7 @@ impl Composer {
     }
 }
 
+#[derive(Debug)]
 pub struct Children<'a> {
     pub(crate) tape: &'a mut [Slot<Box<dyn ComposeNode>>],
     pub(crate) slot_depth: &'a [usize],
