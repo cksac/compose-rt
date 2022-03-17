@@ -515,7 +515,7 @@ impl<'a> ChildrenView<'a> {
             .filter_map(|c| self.tape.get(c).map(|s| s.data.as_ref()))
     }
 
-    pub fn filter<Node: 'static>(&self) -> impl Iterator<Item = &Node> {
+    pub fn with_ty<Node: 'static>(&self) -> impl Iterator<Item = &Node> {
         self.iter().filter_map(|c| c.cast_ref::<Node>())
     }
 }
