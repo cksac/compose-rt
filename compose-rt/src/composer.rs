@@ -207,9 +207,9 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        S: FnOnce(&mut Node) -> bool,
+        S: FnOnce(&Node) -> bool,
         U: FnOnce(&mut Node),
-        O: FnOnce(&Node) -> Output,
+        O: FnOnce(&mut Node) -> Output,
     {
         self.group(factory, skip, |_| {}, |n, _| update(n), output)
     }
@@ -227,9 +227,9 @@ impl Composer {
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
         C: FnOnce(&mut Composer) -> CO,
-        S: FnOnce(&mut Node) -> bool,
+        S: FnOnce(&Node) -> bool,
         U: FnOnce(&mut Node, CO),
-        O: FnOnce(&Node) -> Output,
+        O: FnOnce(&mut Node) -> Output,
     {
         self.slot(factory, skip, content, false, |_, _| {}, update, output)
     }
@@ -247,11 +247,11 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        S: FnOnce(&mut Node) -> bool,
+        S: FnOnce(&Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
         UC: FnOnce(&mut Node, Children),
         U: FnOnce(&mut Node, CO),
-        O: FnOnce(&Node) -> Output,
+        O: FnOnce(&mut Node) -> Output,
     {
         self.slot(factory, skip, content, true, use_children, update, output)
     }
@@ -271,11 +271,11 @@ impl Composer {
     where
         F: FnOnce(&mut Composer) -> Node,
         Node: ComposeNode,
-        S: FnOnce(&mut Node) -> bool,
+        S: FnOnce(&Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
         UC: FnOnce(&mut Node, Children),
         U: FnOnce(&mut Node, CO),
-        O: FnOnce(&Node) -> Output,
+        O: FnOnce(&mut Node) -> Output,
     {
         // remember current slot states
         let id = self.id;
@@ -311,10 +311,10 @@ impl Composer {
         // cache and skip check
         let (is_exist, is_match, is_skip) = self
             .tape
-            .get_mut(curr_cursor)
+            .get(curr_cursor)
             .map(|slot| {
                 if curr_slot_id == slot.id {
-                    if let Some(node) = slot.data.as_mut().cast_mut::<Node>() {
+                    if let Some(node) = slot.data.as_ref().cast_ref::<Node>() {
                         (true, true, skip(node))
                     } else {
                         (true, false, false)
