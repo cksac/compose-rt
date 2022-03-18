@@ -45,6 +45,7 @@ pub struct Composer {
     pub(crate) recycle_bin: HashMap<SlotId, Tape>,
     pub(crate) state_tape: Tape,
     pub(crate) state_cursor: usize,
+    pub(crate) child_cursors: Vec<Vec<usize>>,
 }
 
 impl Composer {
@@ -60,6 +61,7 @@ impl Composer {
             recycle_bin: HashMap::new(),
             state_tape: Vec::new(),
             state_cursor: 0,
+            child_cursors: Vec::new(),
         }
     }
 
@@ -75,6 +77,7 @@ impl Composer {
             recycle_bin: HashMap::new(),
             state_tape: Vec::new(),
             state_cursor: 0,
+            child_cursors: Vec::new(),
         }
     }
 
@@ -205,7 +208,7 @@ impl Composer {
         output: O,
     ) -> Output
     where
-        F: FnOnce(&mut Composer) -> Node,
+        F: FnOnce(&Composer) -> Node,
         Node: ComposeNode,
         S: FnOnce(&Node) -> bool,
         U: FnOnce(&mut Node),
@@ -215,7 +218,7 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn group<F, Node, C, CO, S, U, O, Output>(
+    pub fn group<F, Node, S, C, CO, U, O, Output>(
         &mut self,
         factory: F,
         skip: S,
@@ -224,7 +227,7 @@ impl Composer {
         output: O,
     ) -> Output
     where
-        F: FnOnce(&mut Composer) -> Node,
+        F: FnOnce(&Composer) -> Node,
         Node: ComposeNode,
         C: FnOnce(&mut Composer) -> CO,
         S: FnOnce(&Node) -> bool,
@@ -235,7 +238,7 @@ impl Composer {
     }
 
     #[track_caller]
-    pub fn group_use_children<F, Node, C, CO, UC, S, U, O, Output>(
+    pub fn group_use_children<F, Node, S, C, CO, UC, U, O, Output>(
         &mut self,
         factory: F,
         skip: S,
@@ -245,7 +248,7 @@ impl Composer {
         output: O,
     ) -> Output
     where
-        F: FnOnce(&mut Composer) -> Node,
+        F: FnOnce(&Composer) -> Node,
         Node: ComposeNode,
         S: FnOnce(&Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
@@ -258,7 +261,7 @@ impl Composer {
 
     #[track_caller]
     #[allow(clippy::too_many_arguments)]
-    pub fn slot<F, Node, C, CO, UC, S, U, O, Output>(
+    pub fn slot<F, Node, S, C, CO, UC, U, O, Output>(
         &mut self,
         factory: F,
         skip: S,
@@ -269,7 +272,7 @@ impl Composer {
         output: O,
     ) -> Output
     where
-        F: FnOnce(&mut Composer) -> Node,
+        F: FnOnce(&Composer) -> Node,
         Node: ComposeNode,
         S: FnOnce(&Node) -> bool,
         C: FnOnce(&mut Composer) -> CO,
@@ -296,6 +299,11 @@ impl Composer {
             *d = curr_depth
         } else {
             self.slot_depth.insert(curr_cursor, curr_depth);
+        }
+
+        // save curr_cursor to parent's children list
+        if let Some(p) = self.child_cursors.last_mut() {
+            p.push(curr_cursor);
         }
 
         // found in recycle_bin, restore it to curr_cursor
@@ -402,6 +410,9 @@ impl Composer {
         }
 
         // new or update case
+        if require_use_children {
+            self.child_cursors.push(Vec::new());
+        }
         let co = content(self);
         assert!(
             id == self.id && self.composing && self.tape.len() > curr_cursor,
@@ -411,27 +422,29 @@ impl Composer {
         let child_start = curr_cursor + 1;
         let (head_slots, tail_slots) = self.tape.split_at_mut(child_start);
 
-        let slot = head_slots.last_mut().expect("slot");
-        let node = slot
+        // NOTE: can use head_slots.split_last_mut() to get current_slot and its previous slots in case require to mutate parent
+        let current_slot = head_slots.last_mut().expect("slots");
+        let node = current_slot
             .data
             .as_mut()
             .cast_mut::<Node>()
             .expect("downcast node");
 
         // update new slot size after children fn done
-        slot.size = self.cursor - curr_cursor;
+        current_slot.size = self.cursor - curr_cursor;
 
         if require_use_children {
-            let node_children = Children {
-                tape: &mut tail_slots[..slot.size - 1],
-                slot_depth: &self.slot_depth[child_start..self.cursor],
-                depth: curr_depth + 1,
-            };
+            let child_cursors = self.child_cursors.pop().expect("child_cursors");
+            let node_children = Children::new(
+                &mut tail_slots[..current_slot.size - 1],
+                child_start,
+                child_cursors,
+            );
             use_children(node, node_children);
         }
         update(node, co);
 
-        if log_enabled!(Trace) && slot.size > 1 {
+        if log_enabled!(Trace) && current_slot.size > 1 {
             trace!(
                 "{}{: >7}:{}{} | {:?} | {:?}",
                 if is_exist && is_match { "C" } else { "+" },
@@ -450,24 +463,42 @@ impl Composer {
 #[derive(Debug)]
 pub struct Children<'a> {
     pub(crate) tape: &'a mut [Slot<Box<dyn ComposeNode>>],
-    pub(crate) slot_depth: &'a [usize],
-    pub(crate) depth: usize,
+    pub(crate) cursors: Vec<usize>,
 }
 
 impl<'a> Children<'a> {
+    fn new(
+        tape: &'a mut [Slot<Box<dyn ComposeNode>>],
+        child_start: usize,
+        mut child_cursors: Vec<usize>,
+    ) -> Self {
+        // tape only contains slot start from child_start
+        // child_cursors is global, offset to child start
+        child_cursors.iter_mut().for_each(|v| *v -= child_start);
+        Children {
+            tape,
+            cursors: child_cursors,
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &dyn ComposeNode> {
-        self.tape
+        self.cursors
             .iter()
-            .zip(self.slot_depth)
-            .filter(|(_, d)| **d == self.depth)
-            .map(|(s, _)| s.data.as_ref())
+            .filter_map(|c| self.tape.get(*c).map(|s| s.data.as_ref()))
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut dyn ComposeNode> {
-        self.tape
-            .iter_mut()
-            .zip(self.slot_depth)
-            .filter(|(_, d)| **d == self.depth)
-            .map(|(s, _)| s.data.as_mut())
+        // Note: self.cursors should be sorted to allow iter_mut to work properly
+        let mut offset = 0;
+        let mut tape = self.tape.iter_mut();
+        self.cursors
+            .iter()
+            .filter_map(move |&c| {
+                let translated = c - offset;
+                let value = tape.nth(translated);
+                offset += translated + 1;
+                value
+            })
+            .map(|s| s.data.as_mut())
     }
 }
