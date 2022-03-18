@@ -18,7 +18,7 @@ Below example show how to build a declarative GUI similar to Jetpack Compose UI
 
 ```toml
 [dependencies]
-compose-rt = "0.11"
+compose-rt = "0.12"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
@@ -82,7 +82,7 @@ fn main() {
     // define root compose
     let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
 
-    let mut recomposer = Recomposer::new();
+    let mut recomposer = Recomposer::new(20);
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];

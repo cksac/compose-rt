@@ -54,7 +54,7 @@ fn main() {
     // define root compose
     let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
 
-    let mut recomposer = Recomposer::new();
+    let mut recomposer = Recomposer::new(20);
 
     // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];

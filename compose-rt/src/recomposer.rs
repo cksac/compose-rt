@@ -6,15 +6,9 @@ pub struct Recomposer {
 }
 
 impl Recomposer {
-    pub fn new() -> Self {
+    pub fn new(capacity: usize) -> Self {
         Recomposer {
-            composer: Composer::new(),
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Recomposer {
-            composer: Composer::with_capacity(capacity),
+            composer: Composer::new(capacity),
         }
     }
 
@@ -54,21 +48,14 @@ impl Recomposer {
 
     fn finalize(&mut self) {
         let composer = &mut self.composer;
-        // TODO: move all extra slots to recycle_bin and allow user to decide housekeeping or not?
+        // TODO: move not referenced slot to recycle_bin?
         composer.tape.truncate(composer.cursor);
         composer.slot_depth.truncate(composer.cursor);
         composer.state_tape.truncate(composer.state_cursor);
-        composer.recycle_bin.clear();
 
         composer.cursor = 0;
         composer.depth = 0;
         composer.state_cursor = 0;
         composer.composing = false;
-    }
-}
-
-impl Default for Recomposer {
-    fn default() -> Self {
-        Self::new()
     }
 }

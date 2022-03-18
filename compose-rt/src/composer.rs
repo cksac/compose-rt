@@ -2,9 +2,9 @@ use crate::{CallId, Slot, SlotId};
 use downcast_rs::{impl_downcast, Downcast};
 use log::Level::Trace;
 use log::{log_enabled, trace};
+use lru::LruCache;
 use std::{
     any::{type_name, TypeId},
-    collections::HashMap,
     fmt::Debug,
     panic::Location,
     sync::atomic::{AtomicUsize, Ordering},
@@ -42,14 +42,14 @@ pub struct Composer {
     pub(crate) depth: usize,
     pub(crate) cursor: usize,
     pub(crate) slot_key: Option<usize>,
-    pub(crate) recycle_bin: HashMap<SlotId, Tape>,
+    pub(crate) recycle_bin: LruCache<SlotId, Tape>,
     pub(crate) state_tape: Tape,
     pub(crate) state_cursor: usize,
     pub(crate) child_cursors: Vec<Vec<usize>>,
 }
 
 impl Composer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         Composer {
             id: COMPOSER_ID.fetch_add(1, Ordering::SeqCst),
             composing: true,
@@ -58,23 +58,7 @@ impl Composer {
             depth: 0,
             cursor: 0,
             slot_key: None,
-            recycle_bin: HashMap::new(),
-            state_tape: Vec::new(),
-            state_cursor: 0,
-            child_cursors: Vec::new(),
-        }
-    }
-
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
-        Composer {
-            id: COMPOSER_ID.fetch_add(1, Ordering::SeqCst),
-            composing: true,
-            tape: Vec::with_capacity(capacity),
-            slot_depth: Vec::with_capacity(capacity),
-            depth: 0,
-            cursor: 0,
-            slot_key: None,
-            recycle_bin: HashMap::new(),
+            recycle_bin: LruCache::new(capacity),
             state_tape: Vec::new(),
             state_cursor: 0,
             child_cursors: Vec::new(),
@@ -107,7 +91,7 @@ impl Composer {
         let curr_slot_id = SlotId::new(call_id, key);
 
         // found in recycle_bin, restore it to current cursor
-        if let Some(slots) = self.recycle_bin.remove(&curr_slot_id) {
+        if let Some(slots) = self.recycle_bin.pop(&curr_slot_id) {
             let mut curr_idx = curr_cursor;
             // TODO: use gap table?
             for slot in slots {
@@ -150,7 +134,7 @@ impl Composer {
             }
             let slot_end = curr_cursor + p_size;
             let slots = self.state_tape.drain(curr_cursor..slot_end).collect();
-            self.recycle_bin.insert(p_slot_id, slots);
+            self.recycle_bin.put(p_slot_id, slots);
         }
 
         let val = factory();
@@ -307,7 +291,7 @@ impl Composer {
         }
 
         // found in recycle_bin, restore it to curr_cursor
-        if let Some(slots) = self.recycle_bin.remove(&curr_slot_id) {
+        if let Some(slots) = self.recycle_bin.pop(&curr_slot_id) {
             let mut curr_idx = curr_cursor;
             // TODO: use gap table?
             for slot in slots {
@@ -353,7 +337,7 @@ impl Composer {
             }
             let slot_end = curr_cursor + p_slot_size;
             let slots: Tape = self.tape.drain(curr_cursor..slot_end).collect();
-            self.recycle_bin.insert(p_slot_id, slots);
+            self.recycle_bin.put(p_slot_id, slots);
         }
 
         // exist and cache hit and skip
