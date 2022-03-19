@@ -20,3 +20,5 @@ lru = "0.7"
 [dev-dependencies]
 env_logger = "0.6"
 fake = "2.4"
+fltk = { version = "^1.2", features = ["fltk-bundled"] }
+
