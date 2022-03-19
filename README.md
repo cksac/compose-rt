@@ -13,8 +13,8 @@ A positional memoization runtime similar to Jetpack Compose Runtime.
 - Automatic differentiation
 - Others...
 
-# example
-Below example show how to build a declarative GUI similar to Jetpack Compose UI
+# examples
+- Below example show how to build a declarative GUI similar to Jetpack Compose UI
 
 ```toml
 [dependencies]
@@ -22,24 +22,29 @@ compose-rt = "0.12"
 downcast-rs = "1.2"
 log = "0.4"
 env_logger = "0.6"
-fake = "2.4"
+fltk = { version = "^1.2", features = ["fltk-bundled"] }
 ```
 
 ```rust
 #![allow(non_snake_case)]
 
-use compose_rt::{compose, ComposeNode, Composer, Recomposer};
-use downcast_rs::impl_downcast;
-use fake::{Fake, Faker};
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use compose_rt::{compose, Composer, Recomposer};
+use fltk::{
+    app, button,
+    group::{self, Flex},
+    prelude::*,
+    text,
+    window::Window,
+};
+use std::{cell::RefCell, rc::Rc};
 
 ////////////////////////////////////////////////////////////////////////////
 // User application
 ////////////////////////////////////////////////////////////////////////////
 pub struct Movie {
-    id: usize,
-    name: String,
-    img_url: String,
+    pub id: usize,
+    pub name: String,
+    pub img_url: String,
 }
 impl Movie {
     pub fn new(id: usize, name: impl Into<String>, img_url: impl Into<String>) -> Self {
@@ -64,12 +69,15 @@ pub fn MoviesScreen(movies: &Vec<Movie>) {
 pub fn MovieOverview(movie: &Movie) {
     Column(cx, |cx| {
         Text(cx, &movie.name);
-        Image(cx, &movie.img_url);
-        RandomRenderObject(cx, &movie.name);
 
         let count = cx.remember(|| Rc::new(RefCell::new(0usize)));
-        Text(cx, format!("compose count {}", count.borrow()));
-        *count.borrow_mut() += 1;
+        let c = count.clone();
+        Button(
+            cx,
+            &format!("{} get {} likes", movie.name, count.borrow()),
+            move || *c.borrow_mut() += 1,
+        );
+        Text(cx, format!("Count {}", count.borrow()));
     });
 }
 
@@ -79,38 +87,21 @@ fn main() {
         .filter_level(log::LevelFilter::Trace)
         .init();
 
+    let app = app::App::default();
     // define root compose
-    let root_fn = |cx: &mut Composer, movies| MoviesScreen(cx, movies);
+    let root_fn = |cx: &mut Composer, movies| Window(cx, |cx| MoviesScreen(cx, movies));
 
     let mut recomposer = Recomposer::new(20);
 
-    // first run
     let movies = vec![Movie::new(1, "A", "IMG_A"), Movie::new(2, "B", "IMG_B")];
     recomposer.compose(|cx| {
         root_fn(cx, &movies);
     });
 
-    if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
-        // call paint of render tree
-        let mut context = PaintContext::new();
-        root.borrow().paint(&mut context);
-    }
-
-    // rerun with new input
-    let movies = vec![
-        Movie::new(1, "AA", "IMG_AA"),
-        Movie::new(3, "C", "IMG_C"),
-        Movie::new(2, "B", "IMG_B"),
-    ];
-    recomposer.compose(|cx| {
-        root_fn(cx, &movies);
-    });
-
-    // end compose, Recomposer allow you to access root
-    if let Some(root) = recomposer.root::<Rc<RefCell<RenderFlex>>>() {
-        // call paint of render tree
-        let mut context = PaintContext::new();
-        root.borrow().paint(&mut context);
+    while app.wait() {
+        recomposer.compose(|cx| {
+            root_fn(cx, &movies);
+        });
     }
 }
 
@@ -118,31 +109,39 @@ fn main() {
 // Components - Usage of compose-rt
 ////////////////////////////////////////////////////////////////////////////
 #[compose(skip_inject_cx = true)]
+pub fn Window<C>(cx: &mut Composer, content: C)
+where
+    C: Fn(&mut Composer),
+{
+    cx.group(
+        |_| Window::default().with_size(400, 300),
+        |_| false,
+        content,
+        |_, _| {},
+        |win| {
+            win.end();
+            win.show();
+        },
+    )
+}
+
+#[compose(skip_inject_cx = true)]
 pub fn Column<C>(cx: &mut Composer, content: C)
 where
     C: Fn(&mut Composer),
 {
-    cx.group_use_children(
-        |_| Rc::new(RefCell::new(RenderFlex::new())),
+    cx.group(
+        |_| {
+            let mut flex = Flex::new(0, 0, 400, 300, None);
+            flex.set_type(group::FlexType::Column);
+            flex
+        },
         |_| false,
         content,
-        |node, children| {
-            let mut flex = node.borrow_mut();
-            flex.children.clear();
-            for child in children.iter() {
-                if let Some(c) = child.cast_ref::<Rc<RefCell<RenderLabel>>>().cloned() {
-                    flex.children.push(c);
-                } else if let Some(c) = child.cast_ref::<Rc<RefCell<RenderImage>>>().cloned() {
-                    flex.children.push(c);
-                } else if let Some(c) = child.cast_ref::<Rc<RefCell<RenderFlex>>>().cloned() {
-                    flex.children.push(c);
-                } else if let Some(c) = child.cast_ref::<Rc<RefCell<dyn RenderObject>>>().cloned() {
-                    flex.children.push(c);
-                }
-            }
-        },
         |_, _| {},
-        |_| {},
+        |flex| {
+            flex.end();
+        },
     );
 }
 
@@ -150,116 +149,40 @@ where
 pub fn Text(cx: &mut Composer, text: impl AsRef<str>) {
     let text = text.as_ref();
     cx.memo(
-        |_| Rc::new(RefCell::new(RenderLabel(text.to_string()))),
-        |n| n.borrow().0 == text,
+        |_| {
+            let mut editor = text::TextEditor::default()
+                .with_size(390, 290)
+                .center_of_parent();
+
+            let mut buf = text::TextBuffer::default();
+            buf.set_text(text);
+            editor.set_buffer(buf);
+            editor
+        },
+        |n| n.buffer().unwrap().text().eq(text),
         |n| {
-            let mut n = n.borrow_mut();
-            n.0 = text.to_string();
+            n.buffer().as_mut().unwrap().set_text(text);
         },
         |_| {},
     );
 }
 
 #[compose(skip_inject_cx = true)]
-pub fn Image(cx: &mut Composer, url: impl AsRef<str>) {
-    let url = url.as_ref();
-    cx.memo(
-        |_| Rc::new(RefCell::new(RenderImage(url.to_string()))),
-        |n| n.borrow().0 == url,
-        |n| {
-            let mut n = n.borrow_mut();
-            n.0 = url.to_string();
-        },
-        |_| {},
-    );
-}
-
-#[compose(skip_inject_cx = true)]
-pub fn RandomRenderObject(cx: &mut Composer, text: impl AsRef<str>) {
-    let t = text.as_ref();
+pub fn Button<F>(cx: &mut Composer, text: &str, mut cb: F)
+where
+    F: 'static + FnMut(),
+{
     cx.memo(
         |_| {
-            let obj: Rc<RefCell<dyn RenderObject>> = if Faker.fake::<bool>() {
-                let url = format!("http://image.com/{}.png", t);
-                Rc::new(RefCell::new(RenderImage(url)))
-            } else {
-                Rc::new(RefCell::new(RenderLabel(t.to_string())))
-            };
-            obj
+            let mut btn = button::Button::new(160, 210, 80, 40, None);
+            btn.set_callback(move |_| cb());
+            btn
         },
-        |_| false,
+        |n| n.label().eq(text),
         |n| {
-            if let Some(label) = n.borrow_mut().downcast_mut::<RenderLabel>() {
-                label.0 = t.to_string();
-            }
-            if let Some(img) = n.borrow_mut().downcast_mut::<RenderImage>() {
-                let url = format!("http://image.com/{}.png", t);
-                img.0 = url;
-            }
+            n.set_label(text);
         },
         |_| {},
     );
-}
-
-////////////////////////////////////////////////////////////////////////////
-// Rendering backend - Not scope of compose-rt
-////////////////////////////////////////////////////////////////////////////
-pub struct PaintContext {
-    depth: usize,
-}
-impl PaintContext {
-    pub fn new() -> Self {
-        Self { depth: 0 }
-    }
-}
-
-pub trait RenderObject: Debug + ComposeNode {
-    fn paint(&self, context: &mut PaintContext);
-}
-impl_downcast!(RenderObject);
-
-#[derive(Debug)]
-pub struct RenderFlex {
-    children: Vec<Rc<RefCell<dyn RenderObject>>>,
-}
-
-impl RenderFlex {
-    pub fn new() -> Self {
-        RenderFlex {
-            children: Vec::new(),
-        }
-    }
-}
-
-impl RenderObject for RenderFlex {
-    fn paint(&self, context: &mut PaintContext) {
-        println!(
-            "{}<flex size={}>",
-            "\t".repeat(context.depth),
-            self.children.len()
-        );
-        context.depth += 1;
-        for child in &self.children {
-            child.borrow().paint(context);
-        }
-        context.depth -= 1;
-        println!("{}<flex>", "\t".repeat(context.depth));
-    }
-}
-
-#[derive(Debug)]
-pub struct RenderLabel(String);
-impl RenderObject for RenderLabel {
-    fn paint(&self, context: &mut PaintContext) {
-        println!("{}<label>{}</label>", "\t".repeat(context.depth), self.0);
-    }
-}
-
-#[derive(Debug)]
-pub struct RenderImage(String);
-impl RenderObject for RenderImage {
-    fn paint(&self, context: &mut PaintContext) {
-        println!("{}<img src={}/>", "\t".repeat(context.depth), self.0);
-    }
 }
 ```
