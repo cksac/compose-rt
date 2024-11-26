@@ -1,61 +1,30 @@
-use crate::Composer;
+use generational_box::{AnyStorage, Owner, UnsyncStorage};
 
-#[derive(Debug)]
-pub struct Recomposer {
-    pub(crate) composer: Composer,
+use crate::composer::Cx;
+
+pub struct Recomposer<N> {
+    #[allow(dead_code)]
+    owner: Owner,
+    pub(crate) cx: Cx<N>,
 }
 
-impl Recomposer {
-    pub fn new(capacity: usize) -> Self {
-        Recomposer {
-            composer: Composer::new(capacity),
-        }
+impl<N> Recomposer<N>
+where
+    N: 'static,
+{
+    pub(crate) fn new() -> Self {
+        let owner = UnsyncStorage::owner();
+        let cx = Cx::new_in(&owner);
+        Self { owner, cx }
     }
+}
 
-    pub fn root<R: 'static>(&self) -> Option<&R> {
-        self.composer
-            .tape
-            .get(0)
-            .map(|s| &s.data)
-            .and_then(|n| n.cast_ref::<R>())
-    }
-
-    pub fn root_mut<R: 'static>(&mut self) -> Option<&mut R> {
-        self.composer
-            .tape
-            .get_mut(0)
-            .map(|s| &mut s.data)
-            .and_then(|n| n.cast_mut::<R>())
-    }
-
-    pub fn compose<F, T>(&mut self, func: F) -> T
-    where
-        F: FnOnce(&mut Composer) -> T,
-    {
-        let composer = &mut self.composer;
-        let id = composer.id;
-        let curr_cursor = composer.cursor;
-        composer.composing = true;
-        let t = func(composer);
-        assert!(
-            // len >= curr_cursor, if func don't create any slot
-            id == composer.id && composer.composing && composer.tape.len() >= curr_cursor,
-            "Composer is in inconsistent state"
-        );
-        self.finalize();
-        t
-    }
-
-    fn finalize(&mut self) {
-        let composer = &mut self.composer;
-        // TODO: move not referenced slot to recycle_bin?
-        composer.tape.truncate(composer.cursor);
-        composer.slot_depth.truncate(composer.cursor);
-        composer.state_tape.truncate(composer.state_cursor);
-
-        composer.cursor = 0;
-        composer.depth = 0;
-        composer.state_cursor = 0;
-        composer.composing = false;
+impl<N> Recomposer<N>
+where
+    N: 'static,
+{
+    #[inline(always)]
+    pub fn recompose(&self) {
+        self.cx.recompose();
     }
 }
