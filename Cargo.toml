@@ -1,5 +1,7 @@
-[workspace]
+[package]
+name = "compose-rt"
+version = "0.1.0"
+edition = "2024"
 
-members = [
-    "compose-rt"
-]
+[dependencies]
+generational-box = "0.5.6"
