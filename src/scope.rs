@@ -1,16 +1,17 @@
 use std::{
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
+    usize,
 };
 
 use generational_box::GenerationalBox;
 
-use crate::{Composer, Loc, composer::Group};
+use crate::{Composer, Loc};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
     pub id: ScopeId,
-    composer: GenerationalBox<Composer<N>>,
+    pub(crate) composer: GenerationalBox<Composer<N>>,
 }
 
 impl<S, N> Clone for Scope<S, N> {
@@ -43,8 +44,27 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::new();
+        let id = ScopeId::with_key(self.id.key);
         Scope::new(id, self.composer)
+    }
+
+    #[track_caller]
+    pub fn child_scope_with_key<C>(&self, key: usize) -> Scope<C, N>
+    where
+        C: 'static,
+    {
+        let id = ScopeId::with_key(key);
+        Scope::new(id, self.composer)
+    }
+
+    #[track_caller]
+    pub fn key<C>(&self, key: usize, content: C)
+    where
+        C: Fn(Scope<Key<S>, N>) + 'static,
+    {
+        let c = self.composer.read();
+        let scope = self.child_scope_with_key::<Key<S>>(key);
+        c.create_scope(*self, scope, content);
     }
 
     pub fn build_child<C, T, I, A, F, U>(
@@ -63,7 +83,7 @@ where
         U: Fn(&mut N, A) + 'static,
     {
         let c = self.composer.read();
-        c.create_group(*self, scope, content, input, factory, update);
+        c.create_scope_with_node(*self, scope, content, input, factory, update);
     }
 }
 
@@ -93,4 +113,18 @@ impl Debug for ScopeId {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Root;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Key<S> {
+    _scope: PhantomData<S>,
+}
+
+impl<S> Key<S> {
+    pub fn new() -> Self {
+        Self {
+            _scope: PhantomData,
+        }
+    }
+}

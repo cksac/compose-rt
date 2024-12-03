@@ -1,8 +1,6 @@
-use std::any::Any;
+use compose_rt::{Composer, Root};
 
-use compose_rt::{Composer, Loc, Root};
-
-type Scope<S> = compose_rt::Scope<S, ()>;
+type Scope<S> = compose_rt::Scope<S, String>;
 pub struct Div;
 pub struct Button;
 
@@ -26,7 +24,7 @@ where
         C: Fn(Scope<Div>) + 'static,
     {
         let scope = self.child_scope::<Div>();
-        self.build_child(scope, content, || {}, |_| {}, |_, _| {});
+        self.build_child(scope, content, || {}, |_| String::from("div"), |_, _| {});
     }
 
     #[track_caller]
@@ -39,7 +37,7 @@ where
             scope,
             |_| {},
             move || text.clone().into(),
-            |text| println!("button {}", text),
+            |text| format!("button({})", text),
             |_, _| {},
         );
     }
@@ -97,7 +95,9 @@ where
 fn app(s: Scope<Root>) {
     s.div(|s| {
         for i in 0..3 {
-            s.button(format!("Button {}", i));
+            s.key(i, move |s| {
+                s.button(format!("Item {}", i));
+            });
         }
     });
 
@@ -124,4 +124,8 @@ fn app(s: Scope<Root>) {
 
 fn main() {
     let recomposer = Composer::compose(app);
+    println!("{:#?}", recomposer);
+
+    // recomposer.recompose();
+    // println!("{:#?}", recomposer);
 }
