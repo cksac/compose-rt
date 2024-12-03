@@ -26,15 +26,22 @@ where
         C: Fn(Scope<Div>) + 'static,
     {
         let scope = self.child_scope::<Div>();
-        scope.build_container(content);
+        self.build_child(scope, content, || {}, |_| {}, |_, _| {});
     }
 
+    #[track_caller]
     fn button<T>(&self, text: T)
     where
         T: Into<String> + Clone + 'static,
     {
         let scope = self.child_scope::<Button>();
-        scope.build();
+        self.build_child(
+            scope,
+            |_| {},
+            move || text.clone().into(),
+            |text| println!("button {}", text),
+            |_, _| {},
+        );
     }
 }
 

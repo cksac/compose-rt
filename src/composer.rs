@@ -25,6 +25,7 @@ impl<N> Composer<N> {
         }
     }
 
+    #[track_caller]
     pub fn compose<F>(root: F) -> Recomposer<N>
     where
         N: 'static,
@@ -32,7 +33,8 @@ impl<N> Composer<N> {
     {
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::new());
-        let scope = Scope::new(composer);
+        let id = ScopeId::new();
+        let scope = Scope::new(id, composer);
         root(scope);
 
         let c = composer.read();
@@ -42,21 +44,42 @@ impl<N> Composer<N> {
         Recomposer { owner, composer }
     }
 
-    #[track_caller]
-    pub fn start_group<C>(&self, composable: C)
-    where
+    pub(crate) fn create_group<C, P, S, I, A, F, U>(
+        &self,
+        parent: Scope<P, N>,
+        scope: Scope<S, N>,
+        content: C,
+        input: I,
+        factory: F,
+        update: U,
+    ) where
         N: 'static,
-        C: Fn() + 'static,
+        P: 'static,
+        S: 'static,
+        C: Fn(Scope<S, N>) + 'static,
+        I: Fn() -> A + 'static,
+        A: 'static,
+        F: Fn(A) -> N + 'static,
+        U: Fn(&mut N, A) + 'static,
     {
-        let id = ScopeId::new();
-        let mut groups = self.groups.write().unwrap();
-        let g = Group { node: None };
-        groups.push(g);
+        let composable = move || {
+            let parent = parent;
+            let scope = scope;
+            content(scope);
 
-        let composables = self.composables.read().unwrap();
-        if !composables.contains_key(&id) {
+            let args = input();
+            factory(args);
+        };
+        composable();
+        let registered = {
+            let composables = self.composables.read().unwrap();
+            composables.contains_key(&scope.id)
+        };
+        if registered {
             let mut new_composables = self.new_composables.write().unwrap();
-            new_composables.insert(id, Box::new(composable));
+            if !new_composables.contains_key(&scope.id) {
+                new_composables.insert(scope.id, Box::new(composable));
+            }
         }
     }
 }

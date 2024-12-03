@@ -9,6 +9,7 @@ use crate::{Composer, Loc, composer::Group};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
+    pub id: ScopeId,
     composer: GenerationalBox<Composer<N>>,
 }
 
@@ -16,6 +17,7 @@ impl<S, N> Clone for Scope<S, N> {
     fn clone(&self) -> Self {
         Self {
             _scope: PhantomData,
+            id: self.id,
             composer: self.composer.clone(),
         }
     }
@@ -28,35 +30,40 @@ where
     S: 'static,
     N: 'static,
 {
-    pub fn new(composer: GenerationalBox<Composer<N>>) -> Self {
+    pub fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
             _scope: PhantomData,
+            id,
             composer,
         }
     }
 
+    #[track_caller]
     pub fn child_scope<C>(&self) -> Scope<C, N>
     where
         C: 'static,
     {
-        Scope::new(self.composer)
+        let id = ScopeId::new();
+        Scope::new(id, self.composer)
     }
 
-    pub fn build_container<C>(self, content: C)
-    where
-        C: Fn(Self) + 'static,
+    pub fn build_child<C, T, I, A, F, U>(
+        &self,
+        scope: Scope<T, N>,
+        content: C,
+        input: I,
+        factory: F,
+        update: U,
+    ) where
+        T: 'static,
+        C: Fn(Scope<T, N>) + 'static,
+        I: Fn() -> A + 'static,
+        A: 'static,
+        F: Fn(A) -> N + 'static,
+        U: Fn(&mut N, A) + 'static,
     {
         let c = self.composer.read();
-        let composable = move || {
-            content(self);
-        };
-        c.start_group(composable);
-    }
-
-    pub fn build(self) {
-        let c = self.composer.read();
-        let composable = move || {};
-        c.start_group(composable);
+        c.create_group(*self, scope, content, input, factory, update);
     }
 }
 
