@@ -4,12 +4,18 @@ type Scope<S> = compose_rt::Scope<S, String>;
 pub struct Div;
 pub struct Button;
 
+pub struct Text;
+
 pub trait Html {
     fn div<C>(&self, content: C)
     where
         C: Fn(Scope<Div>) + 'static;
 
     fn button<T>(&self, text: T)
+    where
+        T: Into<String> + Clone + 'static;
+
+    fn text<T>(&self, text: T)
     where
         T: Into<String> + Clone + 'static;
 }
@@ -38,6 +44,21 @@ where
             |_| {},
             move || text.clone().into(),
             |text| format!("button({})", text),
+            |_, _| {},
+        );
+    }
+
+    #[track_caller]
+    fn text<T>(&self, text: T)
+    where
+        T: Into<String> + Clone + 'static,
+    {
+        let scope = self.child_scope::<Text>();
+        self.build_child(
+            scope,
+            |_| {},
+            move || text.clone().into(),
+            |text| format!("text({})", text),
             |_, _| {},
         );
     }
@@ -94,11 +115,23 @@ where
 
 fn app(s: Scope<Root>) {
     s.div(|s| {
-        for i in 0..3 {
-            s.key(i, move |s| {
-                s.button(format!("Item {}", i));
-            });
-        }
+        let count = s.use_state(|| 0);
+        s.div(move |s| {
+            s.text("start");
+            let c = count.get();
+            if c == 0 {
+                s.button("Load items");
+                count.set(c + 1);
+            } else {
+                for i in 0..c {
+                    s.key(i, move |s| {
+                        s.button(format!("Item {}", i));
+                    });
+                }
+                count.set(c + 1);
+            }
+            s.text("end");
+        })
     });
 
     // s.div().padding(10).content(|s| {
@@ -126,6 +159,8 @@ fn main() {
     let recomposer = Composer::compose(app);
     println!("{:#?}", recomposer);
 
-    // recomposer.recompose();
-    // println!("{:#?}", recomposer);
+    println!("recompose");
+
+    recomposer.recompose();
+    println!("{:#?}", recomposer);
 }

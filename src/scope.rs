@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
     usize,
@@ -6,7 +7,7 @@ use std::{
 
 use generational_box::GenerationalBox;
 
-use crate::{Composer, Loc};
+use crate::{Composer, Loc, State, state::StateId};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
@@ -29,7 +30,7 @@ impl<S, N> Copy for Scope<S, N> {}
 impl<S, N> Scope<S, N>
 where
     S: 'static,
-    N: 'static,
+    N: Debug + 'static,
 {
     pub fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
@@ -44,7 +45,7 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(self.id.key);
+        let id = ScopeId::with_key(self.id.key, self.id.depth + 1);
         Scope::new(id, self.composer)
     }
 
@@ -53,8 +54,24 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(key);
+        let id = ScopeId::with_key(key, self.id.depth + 1);
         Scope::new(id, self.composer)
+    }
+
+    #[track_caller]
+    pub fn use_state<F, T>(&self, init: F) -> State<T, N>
+    where
+        T: 'static,
+        F: Fn() -> T + 'static,
+    {
+        let c = self.composer.read();
+        let scope_id = self.id;
+        let id = StateId::new();
+        let mut states = c.states.write().unwrap();
+        let scope_states = states.entry(scope_id).or_insert_with(HashMap::new);
+
+        let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
+        State::new(scope_id, id, self.composer)
     }
 
     #[track_caller]
@@ -91,25 +108,26 @@ where
 pub struct ScopeId {
     pub loc: Loc,
     pub key: usize,
+    pub depth: usize,
 }
 
 impl ScopeId {
     #[track_caller]
-    pub fn new() -> Self {
+    pub fn new(depth: usize) -> Self {
         let loc = Loc::new();
-        Self { loc, key: 0 }
+        Self { loc, key: 0, depth }
     }
 
     #[track_caller]
-    pub fn with_key(key: usize) -> Self {
+    pub fn with_key(key: usize, depth: usize) -> Self {
         let loc = Loc::new();
-        Self { loc, key }
+        Self { loc, key, depth }
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}-{}", self.loc, self.key)
+        write!(f, "{:?}-{}-{}", self.loc, self.key, self.depth)
     }
 }
 

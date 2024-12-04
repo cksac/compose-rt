@@ -6,3 +6,6 @@ pub use scope::{Root, Scope, ScopeId};
 
 mod loc;
 pub use loc::Loc;
+
+mod state;
+pub use state::State;
