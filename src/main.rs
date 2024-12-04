@@ -116,8 +116,8 @@ where
 fn app(s: Scope<Root>) {
     s.div(|s| {
         let count = s.use_state(|| 0);
+        s.text("start");
         s.div(move |s| {
-            s.text("start");
             let c = count.get();
             if c == 0 {
                 s.button("Load items");
@@ -130,8 +130,9 @@ fn app(s: Scope<Root>) {
                 }
                 count.set(c + 1);
             }
-            s.text("end");
-        })
+        });
+
+        s.text("end");
     });
 
     // s.div().padding(10).content(|s| {
