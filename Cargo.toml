@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 generational-box = "0.5.6"
+slotmap = "1.0.7"

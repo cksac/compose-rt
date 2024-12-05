@@ -21,7 +21,6 @@ pub struct Group<N> {
 }
 
 pub struct Composer<N> {
-    ty: PhantomData<N>,
     pub(crate) composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
     pub(crate) groups: RwLock<Vec<Group<N>>>,
@@ -40,7 +39,6 @@ where
 {
     pub fn new() -> Self {
         Self {
-            ty: PhantomData,
             composables: RwLock::new(HashMap::new()),
             new_composables: RwLock::new(HashMap::new()),
             groups: RwLock::new(Vec::new()),
