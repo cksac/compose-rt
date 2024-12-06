@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 
 use compose_rt::{Composer, Root};
@@ -67,22 +67,22 @@ where
     }
 }
 
-fn app(s: Scope<Root>) {
-    s.div(|s| {
+fn app(s: Scope<Root>, n: usize) {
+    s.div(move |s| {
         let count = s.use_state(|| 0);
         s.text("start");
         s.div(move |s| {
             let c = count.get();
             if c == 0 {
                 s.button("Load items");
-                count.set(c + 1);
+                count.set(n);
             } else {
                 for i in 0..c {
                     s.key(i, move |s| {
                         s.button(format!("Item {}", i));
                     });
                 }
-                count.set(c + 1);
+                count.set(0);
             }
         });
         s.text("end");
@@ -90,16 +90,17 @@ fn app(s: Scope<Root>) {
 }
 
 fn run_app(count: usize) {
-    let recomposer = Composer::compose(app);
-    for _ in 0..count {
-        recomposer.recompose();
-    }
+    let recomposer = Composer::compose(move |s: Scope<Root>| app(s, count));
+    recomposer.recompose();
+    recomposer.recompose();
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("count 100", |b| b.iter(|| run_app(black_box(100))));
-    //c.bench_function("count 10000", |b| b.iter(|| run_app(black_box(10000))));
-    //c.bench_function("count 100000", |b| b.iter(|| run_app(black_box(100000))));
+    for count in [100, 1000, 5000, 10000, 50000] {
+        c.bench_function(&format!("bench {}", count), |b| {
+            b.iter(|| run_app(black_box(count)))
+        });
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -9,7 +9,7 @@ use std::{
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
-use crate::{Root, Scope, ScopeId, state::StateId};
+use crate::{state::StateId, Root, Scope, ScopeId};
 
 #[derive(Debug)]
 pub struct Group<N> {
@@ -118,7 +118,8 @@ where
             let scope = scope;
             let c = parent.composer.read();
             let is_dirty = c.is_dirty(scope.id);
-            if !is_dirty && c.visited_scope(scope.id) {
+            if !is_dirty && c.is_visited(scope.id) {
+                c.skip_group();
                 return;
             }
             let parent_child_idx = c.start_group(scope.id);
@@ -148,10 +149,12 @@ where
                     let parent_grp = groups.get_mut(&parent.id).unwrap();
                     if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
                         if existing_child != scope.id {
+                            //println!("replace grp {:?} by {:?}", existing_child, scope.id);
                             parent_grp.children[curr_child_idx] = scope.id;
                             groups.remove(&existing_child);
                         }
                     } else {
+                        //println!("new grp {:?}", scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -182,7 +185,8 @@ where
             let scope = scope;
             let c = parent.composer.read();
             let is_dirty = c.is_dirty(scope.id);
-            if !is_dirty && c.visited_scope(scope.id) {
+            if !is_dirty && c.is_visited(scope.id) {
+                c.skip_group();
                 return;
             }
             let parent_child_idx = c.start_group(scope.id);
@@ -197,10 +201,12 @@ where
                     let parent_grp = groups.get_mut(&parent.id).unwrap();
                     if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
                         if existing_child != scope.id {
+                            //println!("replace grp {:?} by {:?}", existing_child, scope.id);
                             parent_grp.children[curr_child_idx] = scope.id;
                             groups.remove(&existing_child);
                         }
                     } else {
+                        //println!("new grp {:?}", scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -225,11 +231,14 @@ where
         let parent = ScopeId::new(0);
         self.set_current_scope(scope);
         self.child_count_stack.write().unwrap().push(0);
-        self.groups.write().unwrap().insert(scope, Group {
-            node: None,
-            parent,
-            children: Vec::new(),
-        });
+        self.groups.write().unwrap().insert(
+            scope,
+            Group {
+                node: None,
+                parent,
+                children: Vec::new(),
+            },
+        );
     }
 
     #[inline(always)]
@@ -279,6 +288,14 @@ where
     }
 
     #[inline(always)]
+    fn skip_group(&self) {
+        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        if let Some(parent_child_count) = child_count_stack.last_mut() {
+            *parent_child_count += 1;
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn get_current_scope(&self) -> ScopeId {
         *self.current_scope.read().unwrap()
     }
@@ -289,21 +306,25 @@ where
         *current_scope = scope;
     }
 
+    #[inline(always)]
     fn is_registered(&self, scope: ScopeId) -> bool {
         let composables = self.composables.read().unwrap();
         composables.contains_key(&scope)
     }
 
-    fn visited_scope(&self, scope: ScopeId) -> bool {
+    #[inline(always)]
+    fn is_visited(&self, scope: ScopeId) -> bool {
         let groups = self.groups.read().unwrap();
         groups.contains_key(&scope)
     }
 
+    #[inline(always)]
     fn is_dirty(&self, scope: ScopeId) -> bool {
         let dirty_scopes = self.dirty_scopes.read().unwrap();
         dirty_scopes.contains(&scope)
     }
 
+    #[inline(always)]
     fn clear_dirty(&self, scope: ScopeId) {
         let mut dirty_scopes = self.dirty_scopes.write().unwrap();
         dirty_scopes.remove(&scope);
