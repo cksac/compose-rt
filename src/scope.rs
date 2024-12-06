@@ -6,6 +6,7 @@ use std::{
 };
 
 use generational_box::GenerationalBox;
+use rustc_hash::FxHashMap;
 
 use crate::{Composer, Loc, State, state::StateId};
 
@@ -68,8 +69,7 @@ where
         let scope_id = self.id;
         let id = StateId::new();
         let mut states = c.states.write().unwrap();
-        let scope_states = states.entry(scope_id).or_insert_with(HashMap::new);
-
+        let scope_states = states.entry(scope_id).or_default();
         let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
         State::new(scope_id, id, self.composer)
     }

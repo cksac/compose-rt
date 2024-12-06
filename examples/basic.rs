@@ -161,7 +161,6 @@ fn main() {
     println!("{:#?}", recomposer);
 
     println!("recompose");
-
     recomposer.recompose();
     println!("{:#?}", recomposer);
 }

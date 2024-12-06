@@ -1,9 +1,9 @@
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use std::{
-    any::{Any, TypeId},
-    collections::{HashMap, HashSet},
+    any::Any,
+    collections::hash_map::Entry::{Occupied, Vacant},
     fmt::{Debug, Formatter},
-    marker::PhantomData,
-    mem,
     sync::RwLock,
 };
 
@@ -19,13 +19,13 @@ pub struct Group<N> {
 }
 
 pub struct Composer<N> {
-    pub(crate) composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) new_composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) groups: RwLock<HashMap<ScopeId, Group<N>>>,
-    pub(crate) states: RwLock<HashMap<ScopeId, HashMap<StateId, Box<dyn Any>>>>,
-    pub(crate) subscribers: RwLock<HashMap<StateId, HashSet<ScopeId>>>,
-    pub(crate) dirty_states: RwLock<HashSet<StateId>>,
-    dirty_scopes: RwLock<HashSet<ScopeId>>,
+    pub(crate) composables: RwLock<FxHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) new_composables: RwLock<FxHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) groups: RwLock<FxHashMap<ScopeId, Group<N>>>,
+    pub(crate) states: RwLock<FxHashMap<ScopeId, FxHashMap<StateId, Box<dyn Any>>>>,
+    pub(crate) subscribers: RwLock<FxHashMap<StateId, FxHashSet<ScopeId>>>,
+    pub(crate) dirty_states: RwLock<FxHashSet<StateId>>,
+    dirty_scopes: RwLock<FxHashSet<ScopeId>>,
     current_scope: RwLock<ScopeId>,
     child_count_stack: RwLock<Vec<usize>>,
 }
@@ -36,14 +36,14 @@ where
 {
     pub fn new() -> Self {
         Self {
-            composables: RwLock::new(HashMap::new()),
-            new_composables: RwLock::new(HashMap::new()),
-            groups: RwLock::new(HashMap::new()),
+            composables: RwLock::new(FxHashMap::default()),
+            new_composables: RwLock::new(FxHashMap::default()),
+            groups: RwLock::new(FxHashMap::default()),
             current_scope: RwLock::new(ScopeId::new(0)),
-            states: RwLock::new(HashMap::new()),
-            subscribers: RwLock::new(HashMap::new()),
-            dirty_states: RwLock::new(HashSet::new()),
-            dirty_scopes: RwLock::new(HashSet::new()),
+            states: RwLock::new(FxHashMap::default()),
+            subscribers: RwLock::new(FxHashMap::default()),
+            dirty_states: RwLock::new(FxHashSet::default()),
+            dirty_scopes: RwLock::new(FxHashSet::default()),
             child_count_stack: RwLock::new(Vec::new()),
         }
     }
@@ -68,7 +68,7 @@ where
     }
 
     pub(crate) fn recompose(&self) {
-        let mut affected_scopes = HashSet::new();
+        let mut affected_scopes = FxHashSet::default();
         {
             let mut dirty_states = self.dirty_states.write().unwrap();
             for state_id in dirty_states.drain() {
@@ -117,10 +117,50 @@ where
             let parent = parent;
             let scope = scope;
             let c = parent.composer.read();
-            c.start_group(parent.id, scope.id);
+            let is_dirty = c.is_dirty(scope.id);
+            if !is_dirty && c.visited_scope(scope.id) {
+                return;
+            }
+            let parent_child_idx = c.start_group(scope.id);
+            {
+                let mut groups = c.groups.write().unwrap();
+                let input = input();
+                match groups.entry(scope.id) {
+                    Occupied(mut entry) => {
+                        let group = entry.get_mut();
+                        if let Some(node) = group.node.as_mut() {
+                            update(node, input);
+                        } else {
+                            let node = factory(input);
+                            group.node = Some(node);
+                        }
+                    }
+                    Vacant(entry) => {
+                        let node = factory(input);
+                        entry.insert(Group {
+                            node: Some(node),
+                            parent: parent.id,
+                            children: Vec::new(),
+                        });
+                    }
+                }
+                if let Some(curr_child_idx) = parent_child_idx {
+                    let parent_grp = groups.get_mut(&parent.id).unwrap();
+                    if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
+                        if existing_child != scope.id {
+                            parent_grp.children[curr_child_idx] = scope.id;
+                            groups.remove(&existing_child);
+                        }
+                    } else {
+                        parent_grp.children.push(scope.id);
+                    }
+                }
+            }
             content(scope);
+            if is_dirty {
+                c.clear_dirty(scope.id);
+            }
             c.end_group(parent.id, scope.id);
-            c.set_current_scope(parent.id);
         };
         composable();
         if !self.is_registered(scope.id) {
@@ -141,10 +181,35 @@ where
             let parent = parent;
             let scope = scope;
             let c = parent.composer.read();
-            c.start_group(parent.id, scope.id);
+            let is_dirty = c.is_dirty(scope.id);
+            if !is_dirty && c.visited_scope(scope.id) {
+                return;
+            }
+            let parent_child_idx = c.start_group(scope.id);
+            {
+                let mut groups = c.groups.write().unwrap();
+                groups.entry(scope.id).or_insert_with(|| Group {
+                    node: None,
+                    parent: parent.id,
+                    children: Vec::new(),
+                });
+                if let Some(curr_child_idx) = parent_child_idx {
+                    let parent_grp = groups.get_mut(&parent.id).unwrap();
+                    if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
+                        if existing_child != scope.id {
+                            parent_grp.children[curr_child_idx] = scope.id;
+                            groups.remove(&existing_child);
+                        }
+                    } else {
+                        parent_grp.children.push(scope.id);
+                    }
+                }
+            }
             content(scope);
+            if is_dirty {
+                c.clear_dirty(scope.id);
+            }
             c.end_group(parent.id, scope.id);
-            c.set_current_scope(parent.id);
         };
         composable();
         if !self.is_registered(scope.id) {
@@ -183,14 +248,11 @@ where
     }
 
     #[inline(always)]
-    fn start_group(&self, parent: ScopeId, scope: ScopeId) {
+    fn start_group(&self, scope: ScopeId) -> Option<usize> {
+        let parent_child_idx = self.child_count_stack.read().unwrap().last().cloned();
         self.set_current_scope(scope);
         self.child_count_stack.write().unwrap().push(0);
-        self.groups.write().unwrap().insert(scope, Group {
-            node: None,
-            parent,
-            children: Vec::new(),
-        });
+        parent_child_idx
     }
 
     #[inline(always)]
@@ -200,16 +262,20 @@ where
         let mut groups = self.groups.write().unwrap();
         let old_child_count = groups[&scope].children.len();
         if child_count < old_child_count {
-            groups
+            let removed = groups
                 .get_mut(&scope)
                 .unwrap()
                 .children
-                .truncate(child_count);
+                .drain(child_count..)
+                .collect::<Vec<_>>();
+            for child in removed {
+                groups.remove(&child);
+            }
         }
         if let Some(parent_child_count) = child_count_stack.last_mut() {
             *parent_child_count += 1;
-            groups.get_mut(&parent).unwrap().children.push(scope);
         }
+        self.set_current_scope(parent);
     }
 
     #[inline(always)]
@@ -226,6 +292,11 @@ where
     fn is_registered(&self, scope: ScopeId) -> bool {
         let composables = self.composables.read().unwrap();
         composables.contains_key(&scope)
+    }
+
+    fn visited_scope(&self, scope: ScopeId) -> bool {
+        let groups = self.groups.read().unwrap();
+        groups.contains_key(&scope)
     }
 
     fn is_dirty(&self, scope: ScopeId) -> bool {
