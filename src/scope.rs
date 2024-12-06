@@ -106,9 +106,9 @@ where
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
+    pub depth: usize,
     pub loc: Loc,
     pub key: usize,
-    pub depth: usize,
 }
 
 impl ScopeId {

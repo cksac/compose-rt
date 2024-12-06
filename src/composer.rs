@@ -13,24 +13,21 @@ use crate::{Root, Scope, ScopeId, state::StateId};
 
 #[derive(Debug)]
 pub struct Group<N> {
-    id: ScopeId,
     parent: ScopeId,
-    scope_ty: TypeId,
-    size: usize,
+    children: Vec<ScopeId>,
     node: Option<N>,
 }
 
 pub struct Composer<N> {
     pub(crate) composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RwLock<HashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) groups: RwLock<Vec<Group<N>>>,
-    group_indexes: RwLock<HashMap<ScopeId, usize>>,
+    pub(crate) groups: RwLock<HashMap<ScopeId, Group<N>>>,
     pub(crate) states: RwLock<HashMap<ScopeId, HashMap<StateId, Box<dyn Any>>>>,
     pub(crate) subscribers: RwLock<HashMap<StateId, HashSet<ScopeId>>>,
     pub(crate) dirty_states: RwLock<HashSet<StateId>>,
     dirty_scopes: RwLock<HashSet<ScopeId>>,
     current_scope: RwLock<ScopeId>,
-    current_group_index: RwLock<usize>,
+    child_count_stack: RwLock<Vec<usize>>,
 }
 
 impl<N> Composer<N>
@@ -41,14 +38,13 @@ where
         Self {
             composables: RwLock::new(HashMap::new()),
             new_composables: RwLock::new(HashMap::new()),
-            groups: RwLock::new(Vec::new()),
-            group_indexes: RwLock::new(HashMap::new()),
+            groups: RwLock::new(HashMap::new()),
             current_scope: RwLock::new(ScopeId::new(0)),
-            current_group_index: RwLock::new(0),
             states: RwLock::new(HashMap::new()),
             subscribers: RwLock::new(HashMap::new()),
             dirty_states: RwLock::new(HashSet::new()),
             dirty_scopes: RwLock::new(HashSet::new()),
+            child_count_stack: RwLock::new(Vec::new()),
         }
     }
 
@@ -57,13 +53,14 @@ where
     where
         F: Fn(Scope<Root, N>),
     {
-        let id = ScopeId::new(0);
+        let id = ScopeId::new(1);
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::new());
         let scope = Scope::new(id, composer);
         let c = composer.read();
-        c.set_current_scope(scope.id);
+        c.start_root(scope.id);
         root(scope);
+        c.end_root(scope.id);
         let mut new_composables = c.new_composables.write().unwrap();
         let mut composables = c.composables.write().unwrap();
         composables.extend(new_composables.drain());
@@ -82,9 +79,6 @@ where
             }
         }
         let mut affected_scopes = affected_scopes.into_iter().collect::<Vec<_>>();
-
-        println!("affected_scopes: {:#?}", affected_scopes);
-
         affected_scopes.sort_by(|a, b| b.depth.cmp(&a.depth));
         {
             let mut dirty_scopes = self.dirty_scopes.write().unwrap();
@@ -94,34 +88,12 @@ where
         for scope in affected_scopes {
             let composables = self.composables.read().unwrap();
             if let Some(composable) = composables.get(&scope) {
-                {
-                    let trace = self.group_indexes.read().unwrap();
-                    if let Some(start_trace) = trace.get(&scope) {
-                        let mut current_trace = self.current_group_index.write().unwrap();
-                        *current_trace = *start_trace;
-                    } else {
-                        continue;
-                    }
-                };
                 composable();
             }
         }
         let mut new_composables = self.new_composables.write().unwrap();
         let mut composables = self.composables.write().unwrap();
         composables.extend(new_composables.drain());
-        {
-            let mut groups = self.groups.write().unwrap();
-            let size = groups.first().unwrap().size;
-            let removed_group = groups.drain(size..);
-            let mut group_indexes = self.group_indexes.write().unwrap();
-            for g in removed_group {
-                if let Some(i) = group_indexes.get(&g.id) {
-                    if i >= &size {
-                        group_indexes.remove(&g.id);
-                    }
-                }
-            }
-        }
     }
 
     pub(crate) fn create_scope_with_node<C, P, S, I, A, F, U>(
@@ -145,64 +117,9 @@ where
             let parent = parent;
             let scope = scope;
             let c = parent.composer.read();
-            c.set_current_scope(scope.id);
-            let curr_grp_index = c.get_current_group_index();
-            {
-                let args = input();
-                let mut groups = c.groups.write().unwrap();
-                if let Some(g) = groups.get_mut(curr_grp_index) {
-                    if g.id != scope.id {
-                        if g.scope_ty != TypeId::of::<S>() {
-                            // replace group
-                            let new_grp = Group {
-                                id: scope.id,
-                                parent: parent.id,
-                                scope_ty: TypeId::of::<S>(),
-                                size: 1,
-                                node: Some(factory(args)),
-                            };
-                            // TODO: use gap buffer
-                            let old_grp = mem::replace(&mut groups[curr_grp_index], new_grp);
-                            // update group indexes lookup
-                            let mut group_indexes = c.group_indexes.write().unwrap();
-                            group_indexes.insert(scope.id, curr_grp_index);
-                            group_indexes.remove(&old_grp.id);
-                        } else {
-                            // reuse group
-                            update(g.node.as_mut().unwrap(), args);
-                            // update group indexes lookup
-                            let mut group_indexes = c.group_indexes.write().unwrap();
-                            group_indexes.insert(scope.id, curr_grp_index);
-                            group_indexes.remove(&g.id);
-                            g.id = scope.id;
-                        }
-                    } else {
-                        // update group
-                        let is_dirty = c.is_dirty(scope.id);
-                        if is_dirty {
-                            update(g.node.as_mut().unwrap(), args);
-                            if is_dirty {
-                                c.clear_dirty(scope.id);
-                            }
-                        }
-                    }
-                } else {
-                    // new group
-                    let new_grp = Group {
-                        id: scope.id,
-                        parent: parent.id,
-                        scope_ty: TypeId::of::<S>(),
-                        size: 1,
-                        node: Some(factory(args)),
-                    };
-                    groups.push(new_grp);
-                    let mut group_indexes = c.group_indexes.write().unwrap();
-                    group_indexes.insert(scope.id, curr_grp_index);
-                }
-                c.set_current_group_index(curr_grp_index + 1);
-            }
+            c.start_group(parent.id, scope.id);
             content(scope);
-            c.end_group(parent.id, scope.id, curr_grp_index);
+            c.end_group(parent.id, scope.id);
             c.set_current_scope(parent.id);
         };
         composable();
@@ -224,43 +141,9 @@ where
             let parent = parent;
             let scope = scope;
             let c = parent.composer.read();
-            c.set_current_scope(scope.id);
-            let curr_grp_index = c.get_current_group_index();
-            {
-                let mut groups = c.groups.write().unwrap();
-                if let Some(g) = groups.get_mut(curr_grp_index) {
-                    if g.id != scope.id {
-                        // replace group
-                        let new_grp = Group {
-                            id: scope.id,
-                            parent: parent.id,
-                            scope_ty: TypeId::of::<S>(),
-                            size: 1,
-                            node: None::<N>,
-                        };
-                        // TODO: use gap buffer
-                        let old_grp = mem::replace(&mut groups[curr_grp_index], new_grp);
-                        let mut group_indexes = c.group_indexes.write().unwrap();
-                        group_indexes.insert(scope.id, curr_grp_index);
-                        group_indexes.remove(&old_grp.id);
-                    }
-                } else {
-                    // new group
-                    let new_grp = Group {
-                        id: scope.id,
-                        parent: parent.id,
-                        scope_ty: TypeId::of::<S>(),
-                        size: 1,
-                        node: None::<N>,
-                    };
-                    groups.push(new_grp);
-                    let mut group_indexes = c.group_indexes.write().unwrap();
-                    group_indexes.insert(scope.id, curr_grp_index);
-                }
-                c.set_current_group_index(curr_grp_index + 1);
-            }
+            c.start_group(parent.id, scope.id);
             content(scope);
-            c.end_group(parent.id, scope.id, curr_grp_index);
+            c.end_group(parent.id, scope.id);
             c.set_current_scope(parent.id);
         };
         composable();
@@ -273,44 +156,59 @@ where
     }
 
     #[inline(always)]
-    fn end_group(&self, parent: ScopeId, scope: ScopeId, group_index: usize) {
-        let current_group_index = *self.current_group_index.read().unwrap();
-        let new_group_size = current_group_index - group_index;
-        let old_group_size = {
-            let mut groups = self.groups.write().unwrap();
-            let g = &mut groups[group_index];
-            let old_group_size = g.size;
-            if g.size != new_group_size {
-                g.size = new_group_size;
-            }
-            old_group_size
-        };
-        // TODO: don't need to propogate if first compose
-        if new_group_size != old_group_size {
-            // current group size changed, propagate to parent groups
-            let mut groups = self.groups.write().unwrap();
-            let lookup = self.group_indexes.read().unwrap();
-            let mut parent_id = parent;
-            loop {
-                if parent_id.depth == 0 {
-                    break;
-                }
+    fn start_root(&self, scope: ScopeId) {
+        let parent = ScopeId::new(0);
+        self.set_current_scope(scope);
+        self.child_count_stack.write().unwrap().push(0);
+        self.groups.write().unwrap().insert(scope, Group {
+            node: None,
+            parent,
+            children: Vec::new(),
+        });
+    }
 
-                let parent_group_idx = lookup.get(&parent_id).unwrap_or_else(|| {
-                    panic!(
-                        "parent group not found for scope: {:?}, parent: {:?}, lookup: {:?}",
-                        scope, parent_id, lookup
-                    )
-                });
-                let parent_group = &mut groups[*parent_group_idx];
-                if new_group_size > old_group_size {
-                    parent_group.size += new_group_size - old_group_size;
-                } else {
-                    parent_group.size -= old_group_size - new_group_size;
-                }
+    #[inline(always)]
+    fn end_root(&self, scope: ScopeId) {
+        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        let child_count = child_count_stack.pop().unwrap();
+        let mut groups = self.groups.write().unwrap();
+        let old_child_count = groups[&scope].children.len();
+        if child_count < old_child_count {
+            groups
+                .get_mut(&scope)
+                .unwrap()
+                .children
+                .truncate(child_count);
+        }
+    }
 
-                parent_id = parent_group.parent;
-            }
+    #[inline(always)]
+    fn start_group(&self, parent: ScopeId, scope: ScopeId) {
+        self.set_current_scope(scope);
+        self.child_count_stack.write().unwrap().push(0);
+        self.groups.write().unwrap().insert(scope, Group {
+            node: None,
+            parent,
+            children: Vec::new(),
+        });
+    }
+
+    #[inline(always)]
+    fn end_group(&self, parent: ScopeId, scope: ScopeId) {
+        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        let child_count = child_count_stack.pop().unwrap();
+        let mut groups = self.groups.write().unwrap();
+        let old_child_count = groups[&scope].children.len();
+        if child_count < old_child_count {
+            groups
+                .get_mut(&scope)
+                .unwrap()
+                .children
+                .truncate(child_count);
+        }
+        if let Some(parent_child_count) = child_count_stack.last_mut() {
+            *parent_child_count += 1;
+            groups.get_mut(&parent).unwrap().children.push(scope);
         }
     }
 
@@ -323,17 +221,6 @@ where
     fn set_current_scope(&self, scope: ScopeId) {
         let mut current_scope = self.current_scope.write().unwrap();
         *current_scope = scope;
-    }
-
-    #[inline(always)]
-    fn get_current_group_index(&self) -> usize {
-        *self.current_group_index.read().unwrap()
-    }
-
-    #[inline(always)]
-    fn set_current_group_index(&self, index: usize) {
-        let mut current_trace = self.current_group_index.write().unwrap();
-        *current_trace = index;
     }
 
     fn is_registered(&self, scope: ScopeId) -> bool {
@@ -374,7 +261,6 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Composer")
             .field("groups", &self.groups)
-            .field("group_indexes", &self.group_indexes)
             .finish()
     }
 }
@@ -387,7 +273,6 @@ where
         let c = self.composer.read();
         f.debug_struct("Recomposer")
             .field("groups", &c.groups)
-            .field("group_indexes", &c.group_indexes)
             .finish()
     }
 }
