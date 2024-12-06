@@ -3,7 +3,7 @@ use std::hint::black_box;
 
 use compose_rt::{Composer, Root};
 
-type Scope<S> = compose_rt::Scope<S, String>;
+type Scope<S> = compose_rt::Scope<S, ()>;
 pub struct Div;
 pub struct Button;
 
@@ -33,7 +33,7 @@ where
         C: Fn(Scope<Div>) + 'static,
     {
         let scope = self.child_scope::<Div>();
-        self.build_child(scope, content, || {}, |_| String::from("div"), |_, _| {});
+        self.build_child(scope, content, || {}, |_| {}, |_, _| {});
     }
 
     #[track_caller]
@@ -46,7 +46,7 @@ where
             scope,
             |_| {},
             move || text.clone().into(),
-            |text| format!("button({})", text),
+            |_| {},
             |_, _| {},
         );
     }
@@ -61,7 +61,7 @@ where
             scope,
             |_| {},
             move || text.clone().into(),
-            |text| format!("text({})", text),
+            |_| {},
             |_, _| {},
         );
     }

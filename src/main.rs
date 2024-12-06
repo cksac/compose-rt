@@ -94,9 +94,15 @@ fn main() {
         .unwrap_or("100".to_string())
         .parse()
         .unwrap();
+    let iter = env::args()
+        .nth(2)
+        .unwrap_or("2".to_string())
+        .parse()
+        .unwrap();
     let start = std::time::Instant::now();
     let recomposer = Composer::compose(move |s| app(s, count));
-    recomposer.recompose();
-    recomposer.recompose();
+    for _ in 0..iter {
+        recomposer.recompose();
+    }
     println!("Time: {:?}", start.elapsed());
 }

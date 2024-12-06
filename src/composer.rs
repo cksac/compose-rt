@@ -1,5 +1,7 @@
 use std::{
     any::Any,
+    borrow::BorrowMut,
+    cell::RefCell,
     collections::hash_map::Entry::{Occupied, Vacant},
     fmt::{Debug, Formatter},
     sync::RwLock,
@@ -18,15 +20,15 @@ pub struct Group<N> {
 }
 
 pub struct Composer<N> {
-    pub(crate) composables: RwLock<AHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) new_composables: RwLock<AHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) groups: RwLock<AHashMap<ScopeId, Group<N>>>,
-    pub(crate) states: RwLock<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
-    pub(crate) subscribers: RwLock<AHashMap<StateId, AHashSet<ScopeId>>>,
-    pub(crate) dirty_states: RwLock<AHashSet<StateId>>,
-    dirty_scopes: RwLock<AHashSet<ScopeId>>,
-    current_scope: RwLock<ScopeId>,
-    child_count_stack: RwLock<Vec<usize>>,
+    pub(crate) composables: RefCell<AHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) new_composables: RefCell<AHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) groups: RefCell<AHashMap<ScopeId, Group<N>>>,
+    pub(crate) states: RefCell<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
+    pub(crate) subscribers: RefCell<AHashMap<StateId, AHashSet<ScopeId>>>,
+    pub(crate) dirty_states: RefCell<AHashSet<StateId>>,
+    dirty_scopes: RefCell<AHashSet<ScopeId>>,
+    current_scope: RefCell<ScopeId>,
+    child_count_stack: RefCell<Vec<usize>>,
 }
 
 impl<N> Composer<N>
@@ -35,15 +37,15 @@ where
 {
     pub fn new() -> Self {
         Self {
-            composables: RwLock::new(AHashMap::default()),
-            new_composables: RwLock::new(AHashMap::default()),
-            groups: RwLock::new(AHashMap::default()),
-            current_scope: RwLock::new(ScopeId::new(0)),
-            states: RwLock::new(AHashMap::default()),
-            subscribers: RwLock::new(AHashMap::default()),
-            dirty_states: RwLock::new(AHashSet::default()),
-            dirty_scopes: RwLock::new(AHashSet::default()),
-            child_count_stack: RwLock::new(Vec::new()),
+            composables: RefCell::new(AHashMap::default()),
+            new_composables: RefCell::new(AHashMap::default()),
+            groups: RefCell::new(AHashMap::default()),
+            current_scope: RefCell::new(ScopeId::new(0)),
+            states: RefCell::new(AHashMap::default()),
+            subscribers: RefCell::new(AHashMap::default()),
+            dirty_states: RefCell::new(AHashSet::default()),
+            dirty_scopes: RefCell::new(AHashSet::default()),
+            child_count_stack: RefCell::new(Vec::new()),
         }
     }
 
@@ -60,8 +62,8 @@ where
         c.start_root(scope.id);
         root(scope);
         c.end_root(scope.id);
-        let mut new_composables = c.new_composables.write().unwrap();
-        let mut composables = c.composables.write().unwrap();
+        let mut new_composables = c.new_composables.borrow_mut();
+        let mut composables = c.composables.borrow_mut();
         composables.extend(new_composables.drain());
         Recomposer { owner, composer }
     }
@@ -69,9 +71,9 @@ where
     pub(crate) fn recompose(&self) {
         let mut affected_scopes = AHashSet::default();
         {
-            let mut dirty_states = self.dirty_states.write().unwrap();
+            let mut dirty_states = self.dirty_states.borrow_mut();
             for state_id in dirty_states.drain() {
-                let subscribers = self.subscribers.write().unwrap();
+                let subscribers = self.subscribers.borrow_mut();
                 if let Some(scopes) = subscribers.get(&state_id) {
                     affected_scopes.extend(scopes.iter().cloned());
                 }
@@ -80,18 +82,18 @@ where
         let mut affected_scopes = affected_scopes.into_iter().collect::<Vec<_>>();
         affected_scopes.sort_by(|a, b| b.depth.cmp(&a.depth));
         {
-            let mut dirty_scopes = self.dirty_scopes.write().unwrap();
+            let mut dirty_scopes = self.dirty_scopes.borrow_mut();
             dirty_scopes.clear();
             dirty_scopes.extend(affected_scopes.iter().cloned());
         }
         for scope in affected_scopes {
-            let composables = self.composables.read().unwrap();
+            let composables = self.composables.borrow();
             if let Some(composable) = composables.get(&scope) {
                 composable();
             }
         }
-        let mut new_composables = self.new_composables.write().unwrap();
-        let mut composables = self.composables.write().unwrap();
+        let mut new_composables = self.new_composables.borrow_mut();
+        let mut composables = self.composables.borrow_mut();
         composables.extend(new_composables.drain());
     }
 
@@ -123,7 +125,7 @@ where
             }
             let parent_child_idx = c.start_group(scope.id);
             {
-                let mut groups = c.groups.write().unwrap();
+                let mut groups = c.groups.borrow_mut();
                 let input = input();
                 match groups.entry(scope.id) {
                     Occupied(mut entry) => {
@@ -166,7 +168,7 @@ where
         };
         composable();
         if !self.is_registered(scope.id) {
-            let mut new_composables = self.new_composables.write().unwrap();
+            let mut new_composables = self.new_composables.borrow_mut();
             if !new_composables.contains_key(&scope.id) {
                 new_composables.insert(scope.id, Box::new(composable));
             }
@@ -190,7 +192,7 @@ where
             }
             let parent_child_idx = c.start_group(scope.id);
             {
-                let mut groups = c.groups.write().unwrap();
+                let mut groups = c.groups.borrow_mut();
                 groups.entry(scope.id).or_insert_with(|| Group {
                     node: None,
                     parent: parent.id,
@@ -218,7 +220,7 @@ where
         };
         composable();
         if !self.is_registered(scope.id) {
-            let mut new_composables = self.new_composables.write().unwrap();
+            let mut new_composables = self.new_composables.borrow_mut();
             if !new_composables.contains_key(&scope.id) {
                 new_composables.insert(scope.id, Box::new(composable));
             }
@@ -229,8 +231,8 @@ where
     fn start_root(&self, scope: ScopeId) {
         let parent = ScopeId::new(0);
         self.set_current_scope(scope);
-        self.child_count_stack.write().unwrap().push(0);
-        self.groups.write().unwrap().insert(
+        self.child_count_stack.borrow_mut().push(0);
+        self.groups.borrow_mut().insert(
             scope,
             Group {
                 node: None,
@@ -242,9 +244,9 @@ where
 
     #[inline(always)]
     fn end_root(&self, scope: ScopeId) {
-        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        let mut child_count_stack = self.child_count_stack.borrow_mut();
         let child_count = child_count_stack.pop().unwrap();
-        let mut groups = self.groups.write().unwrap();
+        let mut groups = self.groups.borrow_mut();
         let old_child_count = groups[&scope].children.len();
         if child_count < old_child_count {
             groups
@@ -257,17 +259,17 @@ where
 
     #[inline(always)]
     fn start_group(&self, scope: ScopeId) -> Option<usize> {
-        let parent_child_idx = self.child_count_stack.read().unwrap().last().cloned();
+        let parent_child_idx = self.child_count_stack.borrow().last().cloned();
         self.set_current_scope(scope);
-        self.child_count_stack.write().unwrap().push(0);
+        self.child_count_stack.borrow_mut().push(0);
         parent_child_idx
     }
 
     #[inline(always)]
     fn end_group(&self, parent: ScopeId, scope: ScopeId) {
-        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        let mut child_count_stack = self.child_count_stack.borrow_mut();
         let child_count = child_count_stack.pop().unwrap();
-        let mut groups = self.groups.write().unwrap();
+        let mut groups = self.groups.borrow_mut();
         let old_child_count = groups[&scope].children.len();
         if child_count < old_child_count {
             let removed = groups
@@ -288,7 +290,7 @@ where
 
     #[inline(always)]
     fn skip_group(&self) {
-        let mut child_count_stack = self.child_count_stack.write().unwrap();
+        let mut child_count_stack = self.child_count_stack.borrow_mut();
         if let Some(parent_child_count) = child_count_stack.last_mut() {
             *parent_child_count += 1;
         }
@@ -296,36 +298,36 @@ where
 
     #[inline(always)]
     pub(crate) fn get_current_scope(&self) -> ScopeId {
-        *self.current_scope.read().unwrap()
+        *self.current_scope.borrow()
     }
 
     #[inline(always)]
     fn set_current_scope(&self, scope: ScopeId) {
-        let mut current_scope = self.current_scope.write().unwrap();
+        let mut current_scope = self.current_scope.borrow_mut();
         *current_scope = scope;
     }
 
     #[inline(always)]
     fn is_registered(&self, scope: ScopeId) -> bool {
-        let composables = self.composables.read().unwrap();
+        let composables = self.composables.borrow();
         composables.contains_key(&scope)
     }
 
     #[inline(always)]
     fn is_visited(&self, scope: ScopeId) -> bool {
-        let groups = self.groups.read().unwrap();
+        let groups = self.groups.borrow();
         groups.contains_key(&scope)
     }
 
     #[inline(always)]
     fn is_dirty(&self, scope: ScopeId) -> bool {
-        let dirty_scopes = self.dirty_scopes.read().unwrap();
+        let dirty_scopes = self.dirty_scopes.borrow();
         dirty_scopes.contains(&scope)
     }
 
     #[inline(always)]
     fn clear_dirty(&self, scope: ScopeId) {
-        let mut dirty_scopes = self.dirty_scopes.write().unwrap();
+        let mut dirty_scopes = self.dirty_scopes.borrow_mut();
         dirty_scopes.remove(&scope);
     }
 }
