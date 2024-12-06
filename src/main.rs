@@ -1,7 +1,6 @@
 use std::env;
 
 use compose_rt::{Composer, Root};
-use fake::Fake;
 
 type Scope<S> = compose_rt::Scope<S, String>;
 pub struct Div;
@@ -67,15 +66,15 @@ where
     }
 }
 
-fn app(s: Scope<Root>) {
-    s.div(|s| {
+fn app(s: Scope<Root>, n: usize) {
+    s.div(move |s| {
         let count = s.use_state(|| 0);
         s.text("start");
         s.div(move |s| {
             let c = count.get();
             if c == 0 {
                 s.button("Load items");
-                count.set((10..100).fake());
+                count.set(n);
             } else {
                 for i in 0..c {
                     s.key(i, move |s| {
@@ -96,9 +95,8 @@ fn main() {
         .parse()
         .unwrap();
     let start = std::time::Instant::now();
-    let recomposer = Composer::compose(app);
-    for _ in 0..count {
-        recomposer.recompose();
-    }
+    let recomposer = Composer::compose(move |s| app(s, count));
+    recomposer.recompose();
+    recomposer.recompose();
     println!("Time: {:?}", start.elapsed());
 }

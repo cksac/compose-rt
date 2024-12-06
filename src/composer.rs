@@ -1,5 +1,3 @@
-use rustc_hash::{FxHashMap, FxHashSet};
-
 use std::{
     any::Any,
     collections::hash_map::Entry::{Occupied, Vacant},
@@ -7,6 +5,7 @@ use std::{
     sync::RwLock,
 };
 
+use ahash::{AHashMap, AHashSet};
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
 use crate::{state::StateId, Root, Scope, ScopeId};
@@ -19,13 +18,13 @@ pub struct Group<N> {
 }
 
 pub struct Composer<N> {
-    pub(crate) composables: RwLock<FxHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) new_composables: RwLock<FxHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) groups: RwLock<FxHashMap<ScopeId, Group<N>>>,
-    pub(crate) states: RwLock<FxHashMap<ScopeId, FxHashMap<StateId, Box<dyn Any>>>>,
-    pub(crate) subscribers: RwLock<FxHashMap<StateId, FxHashSet<ScopeId>>>,
-    pub(crate) dirty_states: RwLock<FxHashSet<StateId>>,
-    dirty_scopes: RwLock<FxHashSet<ScopeId>>,
+    pub(crate) composables: RwLock<AHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) new_composables: RwLock<AHashMap<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) groups: RwLock<AHashMap<ScopeId, Group<N>>>,
+    pub(crate) states: RwLock<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
+    pub(crate) subscribers: RwLock<AHashMap<StateId, AHashSet<ScopeId>>>,
+    pub(crate) dirty_states: RwLock<AHashSet<StateId>>,
+    dirty_scopes: RwLock<AHashSet<ScopeId>>,
     current_scope: RwLock<ScopeId>,
     child_count_stack: RwLock<Vec<usize>>,
 }
@@ -36,14 +35,14 @@ where
 {
     pub fn new() -> Self {
         Self {
-            composables: RwLock::new(FxHashMap::default()),
-            new_composables: RwLock::new(FxHashMap::default()),
-            groups: RwLock::new(FxHashMap::default()),
+            composables: RwLock::new(AHashMap::default()),
+            new_composables: RwLock::new(AHashMap::default()),
+            groups: RwLock::new(AHashMap::default()),
             current_scope: RwLock::new(ScopeId::new(0)),
-            states: RwLock::new(FxHashMap::default()),
-            subscribers: RwLock::new(FxHashMap::default()),
-            dirty_states: RwLock::new(FxHashSet::default()),
-            dirty_scopes: RwLock::new(FxHashSet::default()),
+            states: RwLock::new(AHashMap::default()),
+            subscribers: RwLock::new(AHashMap::default()),
+            dirty_states: RwLock::new(AHashSet::default()),
+            dirty_scopes: RwLock::new(AHashSet::default()),
             child_count_stack: RwLock::new(Vec::new()),
         }
     }
@@ -68,7 +67,7 @@ where
     }
 
     pub(crate) fn recompose(&self) {
-        let mut affected_scopes = FxHashSet::default();
+        let mut affected_scopes = AHashSet::default();
         {
             let mut dirty_states = self.dirty_states.write().unwrap();
             for state_id in dirty_states.drain() {
@@ -337,6 +336,7 @@ pub struct Recomposer<N> {
 }
 
 impl<N> Recomposer<N> {
+    #[inline(always)]
     pub fn recompose(&self)
     where
         N: Debug + 'static,

@@ -1,14 +1,13 @@
 use std::{
-    collections::HashMap,
     fmt::{self, Debug, Formatter},
+    hash::Hash,
     marker::PhantomData,
     usize,
 };
 
 use generational_box::GenerationalBox;
-use rustc_hash::FxHashMap;
 
-use crate::{Composer, Loc, State, state::StateId};
+use crate::{state::StateId, Composer, Loc, State};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
@@ -104,21 +103,30 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScopeId {
     pub depth: usize,
     pub loc: Loc,
     pub key: usize,
 }
 
+impl Hash for ScopeId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.loc.hash(state);
+        self.key.hash(state);
+    }
+}
+
 impl ScopeId {
     #[track_caller]
+    #[inline]
     pub fn new(depth: usize) -> Self {
         let loc = Loc::new();
         Self { loc, key: 0, depth }
     }
 
     #[track_caller]
+    #[inline]
     pub fn with_key(key: usize, depth: usize) -> Self {
         let loc = Loc::new();
         Self { loc, key, depth }

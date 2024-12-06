@@ -11,12 +11,14 @@ pub struct Loc {
 
 impl Loc {
     #[track_caller]
+    #[inline(always)]
     pub fn new() -> Self {
         Self {
             location: Location::caller(),
         }
     }
 
+    #[inline(always)]
     pub fn id(&self) -> usize {
         self.location as *const _ as usize
     }
