@@ -49,7 +49,7 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(self.id.key, self.id.depth + 1);
+        let id = ScopeId::with_key(self.id.key);
         Scope::new(id, self.composer)
     }
 
@@ -58,7 +58,7 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(key, self.id.depth + 1);
+        let id = ScopeId::with_key(key);
         Scope::new(id, self.composer)
     }
 
@@ -110,7 +110,6 @@ where
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScopeId {
-    pub depth: usize,
     pub loc: Loc,
     pub key: usize,
 }
@@ -125,22 +124,22 @@ impl Hash for ScopeId {
 impl ScopeId {
     #[track_caller]
     #[inline]
-    pub fn new(depth: usize) -> Self {
+    pub fn new() -> Self {
         let loc = Loc::new();
-        Self { loc, key: 0, depth }
+        Self { loc, key: 0 }
     }
 
     #[track_caller]
     #[inline]
-    pub fn with_key(key: usize, depth: usize) -> Self {
+    pub fn with_key(key: usize) -> Self {
         let loc = Loc::new();
-        Self { loc, key, depth }
+        Self { loc, key }
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}-{}-{}", self.loc, self.key, self.depth)
+        write!(f, "{:?}-{}", self.loc, self.key)
     }
 }
 

@@ -104,6 +104,6 @@ fn main() {
     for _ in 0..iter {
         recomposer.recompose();
     }
-    println!("{:#?}", recomposer);
+    //println!("{:#?}", recomposer);
     println!("Time: {:?}", start.elapsed());
 }

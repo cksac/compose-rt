@@ -42,7 +42,7 @@ where
             composables: RefCell::new(AHashMap::default()),
             new_composables: RefCell::new(AHashMap::default()),
             groups: RefCell::new(AHashMap::default()),
-            current_scope: RefCell::new(ScopeId::new(0)),
+            current_scope: RefCell::new(ScopeId::new()),
             states: RefCell::new(AHashMap::default()),
             subscribers: RefCell::new(AHashMap::default()),
             uses: RefCell::new(AHashMap::default()),
@@ -60,7 +60,7 @@ where
             composables: RefCell::new(AHashMap::with_capacity(capacity)),
             new_composables: RefCell::new(AHashMap::with_capacity(capacity)),
             groups: RefCell::new(AHashMap::with_capacity(capacity)),
-            current_scope: RefCell::new(ScopeId::new(0)),
+            current_scope: RefCell::new(ScopeId::new()),
             states: RefCell::new(AHashMap::default()),
             subscribers: RefCell::new(AHashMap::default()),
             uses: RefCell::new(AHashMap::default()),
@@ -78,7 +78,7 @@ where
     where
         F: Fn(Scope<Root, N>),
     {
-        let id = ScopeId::new(1);
+        let id = ScopeId::new();
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(1024));
         let scope = Scope::new(id, composer);
@@ -284,7 +284,7 @@ where
 
     #[inline(always)]
     fn start_root(&self, scope: ScopeId) {
-        let parent = ScopeId::new(0);
+        let parent = ScopeId::new();
         self.set_current_scope(scope);
         self.child_count_stack.borrow_mut().push(0);
         self.groups.borrow_mut().insert(
