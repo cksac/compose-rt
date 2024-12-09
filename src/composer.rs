@@ -1,10 +1,8 @@
 use std::{
     any::Any,
-    borrow::BorrowMut,
     cell::RefCell,
     collections::hash_map::Entry::{Occupied, Vacant},
     fmt::{Debug, Formatter},
-    sync::RwLock,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -29,6 +27,7 @@ pub struct Composer<N> {
     dirty_scopes: RefCell<AHashSet<ScopeId>>,
     current_scope: RefCell<ScopeId>,
     child_count_stack: RefCell<Vec<usize>>,
+    unmount_scopes: RefCell<AHashSet<ScopeId>>,
 }
 
 impl<N> Composer<N>
@@ -46,6 +45,7 @@ where
             dirty_states: RefCell::new(AHashSet::default()),
             dirty_scopes: RefCell::new(AHashSet::default()),
             child_count_stack: RefCell::new(Vec::new()),
+            unmount_scopes: RefCell::new(AHashSet::default()),
         }
     }
 
@@ -72,8 +72,8 @@ where
         let mut affected_scopes = AHashSet::default();
         {
             let mut dirty_states = self.dirty_states.borrow_mut();
+            let subscribers = self.subscribers.borrow_mut();
             for state_id in dirty_states.drain() {
-                let subscribers = self.subscribers.borrow_mut();
                 if let Some(scopes) = subscribers.get(&state_id) {
                     affected_scopes.extend(scopes.iter().cloned());
                 }
@@ -86,14 +86,28 @@ where
             dirty_scopes.clear();
             dirty_scopes.extend(affected_scopes.iter().cloned());
         }
-        for scope in affected_scopes {
+        {
             let composables = self.composables.borrow();
-            if let Some(composable) = composables.get(&scope) {
-                composable();
+            for scope in affected_scopes {
+                if let Some(composable) = composables.get(&scope) {
+                    composable();
+                }
+            }
+        }
+        let mut composables = self.composables.borrow_mut();
+        let mut groups = self.groups.borrow_mut();
+        let mut states = self.states.borrow_mut();
+        let mut subs = self.subscribers.borrow_mut();
+        for s in self.unmount_scopes.borrow_mut().drain() {
+            composables.remove(&s);
+            groups.remove(&s);
+            if let Some(scope_states) = states.remove(&s) {
+                for state in scope_states.keys() {
+                    subs.remove(state);
+                }
             }
         }
         let mut new_composables = self.new_composables.borrow_mut();
-        let mut composables = self.composables.borrow_mut();
         composables.extend(new_composables.drain());
     }
 
@@ -152,7 +166,7 @@ where
                         if existing_child != scope.id {
                             //println!("replace grp {:?} by {:?}", existing_child, scope.id);
                             parent_grp.children[curr_child_idx] = scope.id;
-                            groups.remove(&existing_child);
+                            c.unmount_scopes.borrow_mut().insert(existing_child);
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
@@ -204,7 +218,7 @@ where
                         if existing_child != scope.id {
                             //println!("replace grp {:?} by {:?}", existing_child, scope.id);
                             parent_grp.children[curr_child_idx] = scope.id;
-                            groups.remove(&existing_child);
+                            c.unmount_scopes.borrow_mut().insert(existing_child);
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
