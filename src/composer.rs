@@ -8,7 +8,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
-use crate::{state::StateId, Root, Scope, ScopeId};
+use crate::{Root, Scope, ScopeId, StateId};
 
 #[derive(Debug)]
 pub struct Group<N> {
@@ -24,6 +24,7 @@ pub struct Composer<N> {
     pub(crate) states: RefCell<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
     pub(crate) subscribers: RefCell<AHashMap<StateId, AHashSet<ScopeId>>>,
     pub(crate) dirty_states: RefCell<AHashSet<StateId>>,
+    pub(crate) key_stack: RefCell<Vec<usize>>,
     dirty_scopes: RefCell<AHashSet<ScopeId>>,
     current_scope: RefCell<ScopeId>,
     child_count_stack: RefCell<Vec<usize>>,
@@ -43,6 +44,7 @@ where
             states: RefCell::new(AHashMap::default()),
             subscribers: RefCell::new(AHashMap::default()),
             dirty_states: RefCell::new(AHashSet::default()),
+            key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(AHashSet::default()),
             child_count_stack: RefCell::new(Vec::new()),
             unmount_scopes: RefCell::new(AHashSet::default()),
@@ -130,8 +132,11 @@ where
     {
         let composable = move || {
             let parent = parent;
-            let scope = scope;
+            let mut scope = scope;
             let c = parent.composer.read();
+            if let Some(key) = c.key_stack.borrow().last().cloned() {
+                scope.set_key(key);
+            }
             let is_dirty = c.is_dirty(scope.id);
             if !is_dirty && c.is_visited(scope.id) {
                 c.skip_group();
@@ -183,9 +188,9 @@ where
         composable();
         if !self.is_registered(scope.id) {
             let mut new_composables = self.new_composables.borrow_mut();
-            if !new_composables.contains_key(&scope.id) {
-                new_composables.insert(scope.id, Box::new(composable));
-            }
+            new_composables
+                .entry(scope.id)
+                .or_insert_with(|| Box::new(composable));
         }
     }
 
@@ -235,9 +240,9 @@ where
         composable();
         if !self.is_registered(scope.id) {
             let mut new_composables = self.new_composables.borrow_mut();
-            if !new_composables.contains_key(&scope.id) {
-                new_composables.insert(scope.id, Box::new(composable));
-            }
+            new_composables
+                .entry(scope.id)
+                .or_insert_with(|| Box::new(composable));
         }
     }
 

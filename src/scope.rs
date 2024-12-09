@@ -7,7 +7,7 @@ use std::{
 
 use generational_box::GenerationalBox;
 
-use crate::{state::StateId, Composer, Loc, State};
+use crate::{Composer, Loc, State, StateId};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
@@ -38,6 +38,10 @@ where
             id,
             composer,
         }
+    }
+
+    pub(crate) fn set_key(&mut self, key: usize) {
+        self.id.key = key;
     }
 
     #[track_caller]
@@ -76,11 +80,12 @@ where
     #[track_caller]
     pub fn key<C>(&self, key: usize, content: C)
     where
-        C: Fn(Scope<Key<S>, N>) + 'static,
+        C: Fn(Self) + 'static,
     {
         let c = self.composer.read();
-        let scope = self.child_scope_with_key::<Key<S>>(key);
-        c.create_scope(*self, scope, content);
+        c.key_stack.borrow_mut().push(key);
+        content(*self);
+        c.key_stack.borrow_mut().pop();
     }
 
     pub fn build_child<C, T, I, A, F, U>(
@@ -141,16 +146,3 @@ impl Debug for ScopeId {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Root;
-
-#[derive(Debug, Clone, Copy)]
-pub struct Key<S> {
-    _scope: PhantomData<S>,
-}
-
-impl<S> Key<S> {
-    pub fn new() -> Self {
-        Self {
-            _scope: PhantomData,
-        }
-    }
-}
