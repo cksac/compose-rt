@@ -123,6 +123,9 @@ where
                     subs.remove(state);
                 }
             }
+            for (_, scopes) in subs.iter_mut() {
+                scopes.remove(&s);
+            }
         }
         let mut new_composables = self.new_composables.borrow_mut();
         composables.extend(new_composables.drain());
