@@ -91,12 +91,12 @@ fn app(s: Scope<Root>, n: usize) {
 fn main() {
     let count = env::args()
         .nth(1)
-        .unwrap_or("100".to_string())
+        .unwrap_or("1".to_string())
         .parse()
         .unwrap();
     let iter = env::args()
         .nth(2)
-        .unwrap_or("2".to_string())
+        .unwrap_or("1".to_string())
         .parse()
         .unwrap();
     let start = std::time::Instant::now();
@@ -104,5 +104,6 @@ fn main() {
     for _ in 0..iter {
         recomposer.recompose();
     }
+    println!("{:#?}", recomposer);
     println!("Time: {:?}", start.elapsed());
 }

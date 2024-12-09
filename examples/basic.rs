@@ -66,107 +66,42 @@ where
     }
 }
 
-// pub trait Compose<P>: Sized {
-//     fn emit_to(self, parent: Scope<P>);
-// }
-
-// pub struct h_div<F>
-// where
-//     F: Fn(Scope<Div>) + 'static,
-// {
-//     pub padding: f32,
-//     pub content: F,
-// }
-
-// impl<P, F> Compose<P> for h_div<F>
-// where
-//     F: Fn(Scope<Div>) + 'static,
-// {
-//     fn emit_to(self, parent: Scope<P>) {
-//         let (padding, content) = (self.padding, self.content);
-//         let scope = parent.child_scope::<Div>();
-//         let composable = move || {
-//             content(scope);
-//         };
-//         composable();
-//         parent.build(composable);
-//     }
-// }
-
-// pub struct h_button<T>
-// where
-//     T: Into<String>,
-// {
-//     pub padding: f32,
-//     pub text: T,
-// }
-
-// impl<P, T> Compose<P> for h_button<T>
-// where
-//     T: Into<String>,
-// {
-//     fn emit_to(self, parent: Scope<P>) {
-//         let (padding, text) = (self.padding, self.text.into());
-//         let composable = move || {
-//             println!("<button>{}</button>", text);
-//         };
-//         composable();
-//         parent.build(composable);
-//     }
-// }
-
-fn app(s: Scope<Root>) {
-    s.div(|s| {
+fn app(s: Scope<Root>, n: usize) {
+    s.div(move |s| {
         let count = s.use_state(|| 0);
         s.text("start");
         s.div(move |s| {
             let c = count.get();
             if c == 0 {
                 s.button("Load items");
-                count.set(c + 1);
+                count.set(n);
             } else {
                 for i in 0..c {
                     s.key(i, move |s| {
                         s.button(format!("Item {}", i));
                     });
                 }
-                count.set(c + 1);
+                count.set(0);
             }
         });
-
         s.text("end");
     });
-
-    // s.div().padding(10).content(|s| {
-    //     s.button().padding(5).text("Click me");
-    // });
-
-    // s.div(Modifier::new().padding(32.0), |s| {
-    //     s.button(Modifier::new().padding(32.0), "Click me");
-    // });
-
-    // h_div {
-    //     padding: 32.0,
-    //     content: |s: Scope<Div>| {
-    //         h_button {
-    //             padding: 16.0,
-    //             text: "Click me",
-    //         }
-    //         .emit_to(s);
-    //     },
-    // }
-    // .emit_to(s);
 }
 
 fn main() {
-    let start = std::time::Instant::now();
-    let recomposer = Composer::compose(app);
     let count = env::args()
         .nth(1)
-        .unwrap_or("100".to_string())
+        .unwrap_or("1".to_string())
         .parse()
         .unwrap();
-    for _ in 0..count {
+    let iter = env::args()
+        .nth(2)
+        .unwrap_or("1".to_string())
+        .parse()
+        .unwrap();
+    let start = std::time::Instant::now();
+    let recomposer = Composer::compose(move |s| app(s, count));
+    for _ in 0..iter {
         recomposer.recompose();
     }
     println!("Time: {:?}", start.elapsed());

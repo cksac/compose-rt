@@ -51,6 +51,22 @@ where
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            composables: RefCell::new(AHashMap::with_capacity(capacity)),
+            new_composables: RefCell::new(AHashMap::with_capacity(capacity)),
+            groups: RefCell::new(AHashMap::with_capacity(capacity)),
+            current_scope: RefCell::new(ScopeId::new(0)),
+            states: RefCell::new(AHashMap::default()),
+            subscribers: RefCell::new(AHashMap::default()),
+            dirty_states: RefCell::new(AHashSet::default()),
+            key_stack: RefCell::new(Vec::new()),
+            dirty_scopes: RefCell::new(AHashSet::default()),
+            child_count_stack: RefCell::new(Vec::new()),
+            unmount_scopes: RefCell::new(AHashSet::default()),
+        }
+    }
+
     #[track_caller]
     pub fn compose<F>(root: F) -> Recomposer<N>
     where
@@ -58,7 +74,7 @@ where
     {
         let id = ScopeId::new(1);
         let owner = UnsyncStorage::owner();
-        let composer = owner.insert(Composer::new());
+        let composer = owner.insert(Composer::with_capacity(1024));
         let scope = Scope::new(id, composer);
         let c = composer.read();
         c.start_root(scope.id);
@@ -71,18 +87,17 @@ where
     }
 
     pub(crate) fn recompose(&self) {
-        let mut affected_scopes = AHashSet::default();
-        {
+        let affected_scopes = {
             let mut dirty_states = self.dirty_states.borrow_mut();
+            let mut affected_scopes = AHashSet::with_capacity(dirty_states.len());
             let subscribers = self.subscribers.borrow_mut();
             for state_id in dirty_states.drain() {
                 if let Some(scopes) = subscribers.get(&state_id) {
                     affected_scopes.extend(scopes.iter().cloned());
                 }
             }
-        }
-        let mut affected_scopes = affected_scopes.into_iter().collect::<Vec<_>>();
-        affected_scopes.sort_by(|a, b| b.depth.cmp(&a.depth));
+            affected_scopes
+        };
         {
             let mut dirty_scopes = self.dirty_scopes.borrow_mut();
             dirty_scopes.clear();
@@ -175,6 +190,7 @@ where
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
+                        c.unmount_scopes.borrow_mut().remove(&scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -227,6 +243,7 @@ where
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
+                        c.unmount_scopes.borrow_mut().remove(&scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
