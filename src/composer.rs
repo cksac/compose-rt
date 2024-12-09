@@ -29,6 +29,7 @@ pub struct Composer<N> {
     dirty_scopes: RefCell<AHashSet<ScopeId>>,
     current_scope: RefCell<ScopeId>,
     child_count_stack: RefCell<Vec<usize>>,
+    mount_scopes: RefCell<AHashSet<ScopeId>>,
     unmount_scopes: RefCell<AHashSet<ScopeId>>,
 }
 
@@ -49,6 +50,7 @@ where
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(AHashSet::default()),
             child_count_stack: RefCell::new(Vec::new()),
+            mount_scopes: RefCell::new(AHashSet::default()),
             unmount_scopes: RefCell::new(AHashSet::default()),
         }
     }
@@ -66,6 +68,7 @@ where
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(AHashSet::default()),
             child_count_stack: RefCell::new(Vec::new()),
+            mount_scopes: RefCell::new(AHashSet::default()),
             unmount_scopes: RefCell::new(AHashSet::default()),
         }
     }
@@ -119,7 +122,9 @@ where
         let mut states = self.states.borrow_mut();
         let mut subs = self.subscribers.borrow_mut();
         let mut uses = self.uses.borrow_mut();
-        for s in self.unmount_scopes.borrow_mut().drain() {
+        let mut unmount_scopes = self.unmount_scopes.borrow_mut();
+        let mut mount_scopes = self.mount_scopes.borrow_mut();
+        for s in unmount_scopes.difference(&mount_scopes) {
             composables.remove(&s);
             groups.remove(&s);
             if let Some(scope_states) = states.remove(&s) {
@@ -136,6 +141,8 @@ where
                 }
             }
         }
+        unmount_scopes.clear();
+        mount_scopes.clear();
         let mut new_composables = self.new_composables.borrow_mut();
         composables.extend(new_composables.drain());
     }
@@ -202,7 +209,7 @@ where
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
-                        c.unmount_scopes.borrow_mut().remove(&scope.id);
+                        c.mount_scopes.borrow_mut().insert(scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -255,7 +262,7 @@ where
                         }
                     } else {
                         //println!("new grp {:?}", scope.id);
-                        c.unmount_scopes.borrow_mut().remove(&scope.id);
+                        c.mount_scopes.borrow_mut().insert(scope.id);
                         parent_grp.children.push(scope.id);
                     }
                 }
