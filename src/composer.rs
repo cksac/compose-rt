@@ -23,6 +23,7 @@ pub struct Composer<N> {
     pub(crate) groups: RefCell<AHashMap<ScopeId, Group<N>>>,
     pub(crate) states: RefCell<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
     pub(crate) subscribers: RefCell<AHashMap<StateId, AHashSet<ScopeId>>>,
+    pub(crate) uses: RefCell<AHashMap<ScopeId, AHashSet<StateId>>>,
     pub(crate) dirty_states: RefCell<AHashSet<StateId>>,
     pub(crate) key_stack: RefCell<Vec<usize>>,
     dirty_scopes: RefCell<AHashSet<ScopeId>>,
@@ -43,6 +44,7 @@ where
             current_scope: RefCell::new(ScopeId::new(0)),
             states: RefCell::new(AHashMap::default()),
             subscribers: RefCell::new(AHashMap::default()),
+            uses: RefCell::new(AHashMap::default()),
             dirty_states: RefCell::new(AHashSet::default()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(AHashSet::default()),
@@ -59,6 +61,7 @@ where
             current_scope: RefCell::new(ScopeId::new(0)),
             states: RefCell::new(AHashMap::default()),
             subscribers: RefCell::new(AHashMap::default()),
+            uses: RefCell::new(AHashMap::default()),
             dirty_states: RefCell::new(AHashSet::default()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(AHashSet::default()),
@@ -115,6 +118,7 @@ where
         let mut groups = self.groups.borrow_mut();
         let mut states = self.states.borrow_mut();
         let mut subs = self.subscribers.borrow_mut();
+        let mut uses = self.uses.borrow_mut();
         for s in self.unmount_scopes.borrow_mut().drain() {
             composables.remove(&s);
             groups.remove(&s);
@@ -123,8 +127,13 @@ where
                     subs.remove(state);
                 }
             }
-            for (_, scopes) in subs.iter_mut() {
-                scopes.remove(&s);
+            let use_states = uses.remove(&s);
+            if let Some(use_states) = use_states {
+                for state in use_states {
+                    if let Some(subscribers) = subs.get_mut(&state) {
+                        subscribers.remove(&s);
+                    }
+                }
             }
         }
         let mut new_composables = self.new_composables.borrow_mut();

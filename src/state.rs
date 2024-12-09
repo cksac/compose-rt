@@ -42,6 +42,11 @@ where
         let mut subscribers = c.subscribers.borrow_mut();
         let state_subscribers = subscribers.entry(self.id).or_default();
         state_subscribers.insert(current_scope);
+
+        let mut uses = c.uses.borrow_mut();
+        let scope_uses = uses.entry(current_scope).or_default();
+        scope_uses.insert(self.id);
+
         // get state
         let states = c.states.borrow();
         let scope_states = states.get(&self.scope_id).unwrap();
