@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Debug, Formatter},
-    hash::Hash,
+    hash::{Hash, Hasher},
     marker::PhantomData,
     usize,
 };
@@ -115,7 +115,8 @@ pub struct ScopeId {
 }
 
 impl Hash for ScopeId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        //(self.loc.id()+self.key).hash(state);
         self.loc.hash(state);
         self.key.hash(state);
     }

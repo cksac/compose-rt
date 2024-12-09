@@ -3,12 +3,52 @@ use std::{
     cell::RefCell,
     collections::hash_map::Entry::{Occupied, Vacant},
     fmt::{Debug, Formatter},
+    hash::BuildHasher,
 };
 
-use ahash::{AHashMap, AHashSet};
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Root, Scope, ScopeId, StateId};
+
+trait HashMapExt {
+    fn new() -> Self;
+    fn with_capacity(capacity: usize) -> Self;
+}
+
+impl<K, V, S> HashMapExt for std::collections::HashMap<K, V, S>
+where
+    S: BuildHasher + Default,
+{
+    fn new() -> Self {
+        std::collections::HashMap::with_hasher(S::default())
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        std::collections::HashMap::with_capacity_and_hasher(capacity, S::default())
+    }
+}
+
+trait HashSetExt {
+    fn new() -> Self;
+    fn with_capacity(capacity: usize) -> Self;
+}
+
+impl<K, S> HashSetExt for std::collections::HashSet<K, S>
+where
+    S: BuildHasher + Default,
+{
+    fn new() -> Self {
+        std::collections::HashSet::with_hasher(S::default())
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        std::collections::HashSet::with_capacity_and_hasher(capacity, S::default())
+    }
+}
+
+type Map<K, V> = FxHashMap<K, V>;
+type Set<K> = FxHashSet<K>;
 
 #[derive(Debug)]
 pub struct Group<N> {
@@ -18,19 +58,19 @@ pub struct Group<N> {
 }
 
 pub struct Composer<N> {
-    pub(crate) composables: RefCell<AHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) new_composables: RefCell<AHashMap<ScopeId, Box<dyn Fn()>>>,
-    pub(crate) groups: RefCell<AHashMap<ScopeId, Group<N>>>,
-    pub(crate) states: RefCell<AHashMap<ScopeId, AHashMap<StateId, Box<dyn Any>>>>,
-    pub(crate) subscribers: RefCell<AHashMap<StateId, AHashSet<ScopeId>>>,
-    pub(crate) uses: RefCell<AHashMap<ScopeId, AHashSet<StateId>>>,
-    pub(crate) dirty_states: RefCell<AHashSet<StateId>>,
+    pub(crate) composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) new_composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
+    pub(crate) groups: RefCell<Map<ScopeId, Group<N>>>,
+    pub(crate) states: RefCell<Map<ScopeId, Map<StateId, Box<dyn Any>>>>,
+    pub(crate) subscribers: RefCell<Map<StateId, Set<ScopeId>>>,
+    pub(crate) uses: RefCell<Map<ScopeId, Set<StateId>>>,
+    pub(crate) dirty_states: RefCell<Set<StateId>>,
     pub(crate) key_stack: RefCell<Vec<usize>>,
-    dirty_scopes: RefCell<AHashSet<ScopeId>>,
+    dirty_scopes: RefCell<Set<ScopeId>>,
     current_scope: RefCell<ScopeId>,
     child_count_stack: RefCell<Vec<usize>>,
-    mount_scopes: RefCell<AHashSet<ScopeId>>,
-    unmount_scopes: RefCell<AHashSet<ScopeId>>,
+    mount_scopes: RefCell<Set<ScopeId>>,
+    unmount_scopes: RefCell<Set<ScopeId>>,
 }
 
 impl<N> Composer<N>
@@ -39,37 +79,37 @@ where
 {
     pub fn new() -> Self {
         Self {
-            composables: RefCell::new(AHashMap::default()),
-            new_composables: RefCell::new(AHashMap::default()),
-            groups: RefCell::new(AHashMap::default()),
+            composables: RefCell::new(Map::new()),
+            new_composables: RefCell::new(Map::new()),
+            groups: RefCell::new(Map::new()),
             current_scope: RefCell::new(ScopeId::new()),
-            states: RefCell::new(AHashMap::default()),
-            subscribers: RefCell::new(AHashMap::default()),
-            uses: RefCell::new(AHashMap::default()),
-            dirty_states: RefCell::new(AHashSet::default()),
+            states: RefCell::new(Map::new()),
+            subscribers: RefCell::new(Map::new()),
+            uses: RefCell::new(Map::new()),
+            dirty_states: RefCell::new(Set::new()),
             key_stack: RefCell::new(Vec::new()),
-            dirty_scopes: RefCell::new(AHashSet::default()),
+            dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
-            mount_scopes: RefCell::new(AHashSet::default()),
-            unmount_scopes: RefCell::new(AHashSet::default()),
+            mount_scopes: RefCell::new(Set::new()),
+            unmount_scopes: RefCell::new(Set::new()),
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            composables: RefCell::new(AHashMap::with_capacity(capacity)),
-            new_composables: RefCell::new(AHashMap::with_capacity(capacity)),
-            groups: RefCell::new(AHashMap::with_capacity(capacity)),
+            composables: RefCell::new(Map::with_capacity(capacity)),
+            new_composables: RefCell::new(Map::with_capacity(capacity)),
+            groups: RefCell::new(Map::with_capacity(capacity)),
             current_scope: RefCell::new(ScopeId::new()),
-            states: RefCell::new(AHashMap::default()),
-            subscribers: RefCell::new(AHashMap::default()),
-            uses: RefCell::new(AHashMap::default()),
-            dirty_states: RefCell::new(AHashSet::default()),
+            states: RefCell::new(Map::new()),
+            subscribers: RefCell::new(Map::new()),
+            uses: RefCell::new(Map::new()),
+            dirty_states: RefCell::new(Set::new()),
             key_stack: RefCell::new(Vec::new()),
-            dirty_scopes: RefCell::new(AHashSet::default()),
+            dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
-            mount_scopes: RefCell::new(AHashSet::default()),
-            unmount_scopes: RefCell::new(AHashSet::default()),
+            mount_scopes: RefCell::new(Set::new()),
+            unmount_scopes: RefCell::new(Set::new()),
         }
     }
 
@@ -95,7 +135,7 @@ where
     pub(crate) fn recompose(&self) {
         let affected_scopes = {
             let mut dirty_states = self.dirty_states.borrow_mut();
-            let mut affected_scopes = AHashSet::with_capacity(dirty_states.len());
+            let mut affected_scopes = Set::with_capacity(dirty_states.len());
             let subscribers = self.subscribers.borrow_mut();
             for state_id in dirty_states.drain() {
                 if let Some(scopes) = subscribers.get(&state_id) {
