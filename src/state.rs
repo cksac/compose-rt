@@ -17,6 +17,7 @@ where
     T: 'static,
     N: Debug + 'static,
 {
+    #[inline(always)]
     pub(crate) fn new(
         scope_id: ScopeId,
         id: StateId,

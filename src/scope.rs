@@ -26,7 +26,8 @@ where
     S: 'static,
     N: Debug + 'static,
 {
-    pub fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
+    #[inline(always)]
+    pub(crate) fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
             _scope: PhantomData,
             id,
@@ -34,11 +35,13 @@ where
         }
     }
 
+    #[inline(always)]
     pub(crate) fn set_key(&mut self, key: usize) {
         self.id.key = key;
     }
 
     #[track_caller]
+    #[inline(always)]
     pub fn child_scope<C>(&self) -> Scope<C, N>
     where
         C: 'static,
@@ -48,6 +51,7 @@ where
     }
 
     #[track_caller]
+    #[inline(always)]
     pub fn child_scope_with_key<C>(&self, key: usize) -> Scope<C, N>
     where
         C: 'static,
@@ -72,6 +76,7 @@ where
     }
 
     #[track_caller]
+    #[inline(always)]
     pub fn key<C>(&self, key: usize, content: C)
     where
         C: Fn(Self) + 'static,
