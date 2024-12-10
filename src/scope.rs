@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::{self, Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
@@ -81,7 +82,7 @@ where
         c.key_stack.borrow_mut().pop();
     }
 
-    pub fn build_child<C, T, I, A, F, U>(
+    pub fn create_node<C, T, I, A, F, U>(
         &self,
         scope: Scope<T, N>,
         content: C,
@@ -97,7 +98,64 @@ where
         U: Fn(&mut N, A) + 'static,
     {
         let c = self.composer.read();
-        c.create_scope_with_node(*self, scope, content, input, factory, update);
+        c.create_node_scope(*self, scope, content, input, factory, update);
+    }
+
+    pub fn create_any_node<C, T, I, A, E, F, U>(
+        &self,
+        scope: Scope<T, N>,
+        content: C,
+        input: I,
+        factory: F,
+        update: U,
+    ) where
+        T: 'static,
+        C: Fn(Scope<T, N>) + 'static,
+        I: Fn() -> A + 'static,
+        A: 'static,
+        N: AnyNode<E>,
+        E: 'static,
+        F: Fn(A) -> E + 'static,
+        U: Fn(&mut E, A) + 'static,
+    {
+        let c = self.composer.read();
+        c.create_node_scope(
+            *self,
+            scope,
+            content,
+            input,
+            move |args| {
+                let e = factory(args);
+                AnyNode::new(e)
+            },
+            move |n, args| {
+                let e = n.val_mut();
+                update(e, args);
+            },
+        );
+    }
+}
+
+pub trait AnyNode<T> {
+    fn new(val: T) -> Self;
+    fn val(&self) -> &T;
+    fn val_mut(&mut self) -> &mut T;
+}
+
+impl<T> AnyNode<T> for Box<dyn Any>
+where
+    T: 'static,
+{
+    fn new(val: T) -> Self {
+        Box::new(val)
+    }
+
+    fn val(&self) -> &T {
+        self.downcast_ref::<T>().unwrap()
+    }
+
+    fn val_mut(&mut self) -> &mut T {
+        self.downcast_mut::<T>().unwrap()
     }
 }
 

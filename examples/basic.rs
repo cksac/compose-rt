@@ -32,7 +32,7 @@ where
         C: Fn(Scope<Div>) + 'static,
     {
         let scope = self.child_scope::<Div>();
-        self.build_child(scope, content, || {}, |_| String::from("div"), |_, _| {});
+        self.create_node(scope, content, || {}, |_| String::from("div"), |_, _| {});
     }
 
     #[track_caller]
@@ -41,7 +41,7 @@ where
         T: Into<String> + Clone + 'static,
     {
         let scope = self.child_scope::<Button>();
-        self.build_child(
+        self.create_node(
             scope,
             |_| {},
             move || text.clone().into(),
@@ -56,7 +56,7 @@ where
         T: Into<String> + Clone + 'static,
     {
         let scope = self.child_scope::<Text>();
-        self.build_child(
+        self.create_node(
             scope,
             |_| {},
             move || text.clone().into(),
@@ -99,10 +99,18 @@ fn main() {
         .unwrap_or("1".to_string())
         .parse()
         .unwrap();
+    let print = env::args()
+        .nth(3)
+        .unwrap_or("true".to_string())
+        .parse()
+        .unwrap();
     let start = std::time::Instant::now();
     let recomposer = Composer::compose(move |s| app(s, count));
     for _ in 0..iter {
         recomposer.recompose();
+    }
+    if print {
+        println!("{:#?}", recomposer);
     }
     println!("Time: {:?}", start.elapsed());
 }

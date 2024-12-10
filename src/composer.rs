@@ -129,6 +129,10 @@ where
         let mut new_composables = c.new_composables.borrow_mut();
         let mut composables = c.composables.borrow_mut();
         composables.extend(new_composables.drain());
+        let mut unmount_scopes = c.unmount_scopes.borrow_mut();
+        let mut mount_scopes = c.mount_scopes.borrow_mut();
+        unmount_scopes.clear();
+        mount_scopes.clear();
         Recomposer { owner, composer }
     }
 
@@ -187,7 +191,7 @@ where
         composables.extend(new_composables.drain());
     }
 
-    pub(crate) fn create_scope_with_node<C, P, S, I, A, F, U>(
+    pub(crate) fn create_node_scope<C, P, S, I, A, F, U>(
         &self,
         parent: Scope<P, N>,
         scope: Scope<S, N>,
