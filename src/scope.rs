@@ -1,9 +1,6 @@
-use std::{
-    fmt::{self, Debug, Formatter},
-    hash::{Hash, Hasher},
-    marker::PhantomData,
-    usize,
-};
+use std::fmt::{self, Debug, Formatter};
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
@@ -17,11 +14,7 @@ pub struct Scope<S, N> {
 
 impl<S, N> Clone for Scope<S, N> {
     fn clone(&self) -> Self {
-        Self {
-            _scope: PhantomData,
-            id: self.id,
-            composer: self.composer.clone(),
-        }
+        *self
     }
 }
 

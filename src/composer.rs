@@ -1,10 +1,8 @@
-use std::{
-    any::Any,
-    cell::RefCell,
-    collections::hash_map::Entry::{Occupied, Vacant},
-    fmt::{Debug, Formatter},
-    hash::BuildHasher,
-};
+use std::any::Any;
+use std::cell::RefCell;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::fmt::{Debug, Formatter};
+use std::hash::BuildHasher;
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -50,6 +48,7 @@ where
 type Map<K, V> = FxHashMap<K, V>;
 type Set<K> = FxHashSet<K>;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Group<N> {
     parent: ScopeId,
@@ -61,6 +60,7 @@ pub struct Composer<N> {
     pub(crate) composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) groups: RefCell<Map<ScopeId, Group<N>>>,
+    #[allow(clippy::type_complexity)]
     pub(crate) states: RefCell<Map<ScopeId, Map<StateId, Box<dyn Any>>>>,
     pub(crate) subscribers: RefCell<Map<StateId, Set<ScopeId>>>,
     pub(crate) uses: RefCell<Map<ScopeId, Set<StateId>>>,
@@ -165,18 +165,18 @@ where
         let mut unmount_scopes = self.unmount_scopes.borrow_mut();
         let mut mount_scopes = self.mount_scopes.borrow_mut();
         for s in unmount_scopes.difference(&mount_scopes) {
-            composables.remove(&s);
-            groups.remove(&s);
-            if let Some(scope_states) = states.remove(&s) {
+            composables.remove(s);
+            groups.remove(s);
+            if let Some(scope_states) = states.remove(s) {
                 for state in scope_states.keys() {
                     subs.remove(state);
                 }
             }
-            let use_states = uses.remove(&s);
+            let use_states = uses.remove(s);
             if let Some(use_states) = use_states {
                 for state in use_states {
                     if let Some(subscribers) = subs.get_mut(&state) {
-                        subscribers.remove(&s);
+                        subscribers.remove(s);
                     }
                 }
             }
@@ -269,6 +269,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn create_scope<C, P, S>(&self, parent: Scope<P, N>, scope: Scope<S, N>, content: C)
     where
         P: 'static,
@@ -428,6 +429,7 @@ where
 }
 
 pub struct Recomposer<N> {
+    #[allow(dead_code)]
     owner: Owner,
     composer: GenerationalBox<Composer<N>>,
 }

@@ -1,8 +1,6 @@
-use std::{
-    fmt::{Debug, Formatter, Result},
-    hash::Hash,
-    panic::Location,
-};
+use std::fmt::{Debug, Formatter, Result};
+use std::hash::Hash;
+use std::panic::Location;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Loc {

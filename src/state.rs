@@ -1,7 +1,5 @@
-use std::{
-    fmt::{self, Debug, Formatter},
-    marker::PhantomData,
-};
+use std::fmt::{self, Debug, Formatter};
+use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
@@ -42,11 +40,10 @@ where
         let mut subscribers = c.subscribers.borrow_mut();
         let state_subscribers = subscribers.entry(self.id).or_default();
         state_subscribers.insert(current_scope);
-
+        // add state to scope uses
         let mut uses = c.uses.borrow_mut();
         let scope_uses = uses.entry(current_scope).or_default();
         scope_uses.insert(self.id);
-
         // get state
         let states = c.states.borrow();
         let scope_states = states.get(&self.scope_id).unwrap();
@@ -79,12 +76,7 @@ impl<T, N> Debug for State<T, N> {
 
 impl<T, N> Clone for State<T, N> {
     fn clone(&self) -> Self {
-        Self {
-            ty: PhantomData,
-            scope_id: self.scope_id,
-            id: self.id,
-            composer: self.composer.clone(),
-        }
+        *self
     }
 }
 

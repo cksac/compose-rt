@@ -1,0 +1,16 @@
+{
+    "rust-analyzer.checkOnSave": false,
+    "rust-analyzer.cargo.buildScripts.rebuildOnSave": false,
+    "rust-analyzer.imports.prefix": "crate",
+    "rust-analyzer.imports.granularity.group": "module",
+    "rust-analyzer.rustfmt.extraArgs": [
+        "+nightly"
+    ],
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "rust-analyzer.rustfmt.rangeFormatting.enable": true,
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true
+    }
+}

@@ -1,8 +1,7 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-
 use std::hint::black_box;
 
 use compose_rt::{Composer, Root};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 type Scope<S> = compose_rt::Scope<S, ()>;
 pub struct Div;
