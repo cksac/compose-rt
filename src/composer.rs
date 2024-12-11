@@ -7,9 +7,9 @@ use std::hash::BuildHasher;
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{Root, Scope, ScopeId, StateId};
+use crate::{Loc, Root, Scope, ScopeId, StateId};
 
-trait HashMapExt {
+pub(crate) trait HashMapExt {
     fn new() -> Self;
     fn with_capacity(capacity: usize) -> Self;
 }
@@ -27,7 +27,7 @@ where
     }
 }
 
-trait HashSetExt {
+pub(crate) trait HashSetExt {
     fn new() -> Self;
     fn with_capacity(capacity: usize) -> Self;
 }
@@ -45,8 +45,37 @@ where
     }
 }
 
-type Map<K, V> = FxHashMap<K, V>;
-type Set<K> = FxHashSet<K>;
+pub(crate) type Map<K, V> = FxHashMap<K, V>;
+pub(crate) type Set<K> = FxHashSet<K>;
+
+pub(crate) struct LocMapper {
+    map: Map<usize, u32>,
+    next_id: u32,
+}
+
+impl LocMapper {
+    pub fn new() -> Self {
+        LocMapper {
+            map: Map::new(),
+            next_id: u32::MIN,
+        }
+    }
+
+    pub fn transform(&mut self, n: usize) -> u32 {
+        if let Some(&id) = self.map.get(&n) {
+            id
+        } else {
+            let id = self.next_id;
+            self.map.insert(n, id);
+            let (next, overflow) = self.next_id.overflowing_add(1);
+            if overflow {
+                panic!("Too many unique Locations");
+            }
+            self.next_id = next;
+            id
+        }
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -65,12 +94,13 @@ pub(crate) struct StateData {
 }
 
 pub struct Composer<N> {
+    loc_mapper: RefCell<LocMapper>,
     is_initialized: Cell<bool>,
     pub(crate) composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) groups: RefCell<Map<ScopeId, Group<N>>>,
     pub(crate) state_data: RefCell<StateData>,
-    pub(crate) key_stack: RefCell<Vec<usize>>,
+    pub(crate) key_stack: RefCell<Vec<u32>>,
     current_scope: Cell<ScopeId>,
     dirty_scopes: RefCell<Set<ScopeId>>,
     child_count_stack: RefCell<Vec<usize>>,
@@ -84,6 +114,7 @@ where
 {
     pub fn new() -> Self {
         Self {
+            loc_mapper: RefCell::new(LocMapper::new()),
             is_initialized: Cell::new(false),
             composables: RefCell::new(Map::new()),
             new_composables: RefCell::new(Map::new()),
@@ -94,7 +125,7 @@ where
                 uses: Map::new(),
                 dirty_states: Set::new(),
             }),
-            current_scope: Cell::new(ScopeId::new()),
+            current_scope: Cell::new(ScopeId::new(0)),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
@@ -105,6 +136,7 @@ where
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
+            loc_mapper: RefCell::new(LocMapper::new()),
             is_initialized: Cell::new(false),
             composables: RefCell::new(Map::with_capacity(capacity)),
             new_composables: RefCell::new(Map::with_capacity(capacity)),
@@ -115,7 +147,7 @@ where
                 uses: Map::new(),
                 dirty_states: Set::new(),
             }),
-            current_scope: Cell::new(ScopeId::new()),
+            current_scope: Cell::new(ScopeId::new(0)),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
@@ -125,15 +157,35 @@ where
     }
 
     #[track_caller]
+    #[inline(always)]
+    pub(crate) fn new_scope(&self) -> ScopeId {
+        let loc = Loc::new();
+        let id = self.loc_mapper.borrow_mut().transform(loc.id());
+        let loc = Loc::new();
+        let id = (id as u64) << 32;
+        ScopeId::new(id)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn new_keyed_scope(&self, key: u32) -> ScopeId {
+        let loc = Loc::new();
+        let id = self.loc_mapper.borrow_mut().transform(loc.id());
+        let loc = Loc::new();
+        let id = (id as u64) << 32 + (key as u64);
+        ScopeId::new(id)
+    }
+
+    #[track_caller]
     pub fn compose<F>(root: F) -> Recomposer<N>
     where
         F: Fn(Scope<Root, N>),
     {
-        let id = ScopeId::new();
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(1024));
-        let scope = Scope::new(id, composer);
         let c = composer.read();
+        let id = c.new_scope();
+        let scope = Scope::new(id, composer);
         c.start_root(scope.id);
         root(scope);
         c.end_root(scope.id);
@@ -355,7 +407,7 @@ where
 
     #[inline(always)]
     fn start_root(&self, scope: ScopeId) {
-        let parent = ScopeId::new();
+        let parent = ScopeId::new(0);
         self.set_current_scope(scope);
         self.child_count_stack.borrow_mut().push(0);
         self.groups.borrow_mut().insert(

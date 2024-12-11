@@ -1,10 +1,12 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::{self, Debug, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
+use crate::composer::{HashMapExt, Map};
 use crate::{Composer, Loc, State, StateId};
 
 pub struct Scope<S, N> {
@@ -36,8 +38,8 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn set_key(&mut self, key: usize) {
-        self.id.key = key;
+    pub(crate) fn set_key(&mut self, key: u32) {
+        self.id.0 += key as u64;
     }
 
     #[track_caller]
@@ -46,17 +48,19 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(self.id.key);
+        let c = self.composer.read();
+        let id = c.new_scope();
         Scope::new(id, self.composer)
     }
 
     #[track_caller]
     #[inline(always)]
-    pub fn child_scope_with_key<C>(&self, key: usize) -> Scope<C, N>
+    pub fn child_scope_with_key<C>(&self, key: u32) -> Scope<C, N>
     where
         C: 'static,
     {
-        let id = ScopeId::with_key(key);
+        let c = self.composer.read();
+        let id = c.new_keyed_scope(key);
         Scope::new(id, self.composer)
     }
 
@@ -77,7 +81,7 @@ where
 
     #[track_caller]
     #[inline(always)]
-    pub fn key<C>(&self, key: usize, content: C)
+    pub fn key<C>(&self, key: u32, content: C)
     where
         C: Fn(Self) + 'static,
     {
@@ -164,39 +168,20 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ScopeId {
-    pub loc: Loc,
-    pub key: usize,
-}
-
-impl Hash for ScopeId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        //(self.loc.id()+self.key).hash(state);
-        self.loc.hash(state);
-        self.key.hash(state);
-    }
-}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopeId(u64);
 
 impl ScopeId {
     #[track_caller]
     #[inline]
-    pub fn new() -> Self {
-        let loc = Loc::new();
-        Self { loc, key: 0 }
-    }
-
-    #[track_caller]
-    #[inline]
-    pub fn with_key(key: usize) -> Self {
-        let loc = Loc::new();
-        Self { loc, key }
+    pub fn new(id: u64) -> Self {
+        Self(id)
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}-{}", self.loc, self.key)
+        write!(f, "{}", self.0)
     }
 }
 
