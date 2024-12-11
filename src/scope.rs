@@ -69,8 +69,8 @@ where
         let c = self.composer.read();
         let scope_id = self.id;
         let id = StateId::new();
-        let mut states = c.states.borrow_mut();
-        let scope_states = states.entry(scope_id).or_default();
+        let mut state_data = c.state_data.borrow_mut();
+        let scope_states = state_data.states.entry(scope_id).or_default();
         let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
         State::new(scope_id, id, self.composer)
     }

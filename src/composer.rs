@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::fmt::{Debug, Formatter};
 use std::hash::BuildHasher;
@@ -56,18 +56,23 @@ pub struct Group<N> {
     node: Option<N>,
 }
 
+pub(crate) struct StateData {
+    #[allow(clippy::type_complexity)]
+    pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
+    pub(crate) subscribers: Map<StateId, Set<ScopeId>>,
+    pub(crate) uses: Map<ScopeId, Set<StateId>>,
+    pub(crate) dirty_states: Set<StateId>,
+}
+
 pub struct Composer<N> {
+    is_initialized: Cell<bool>,
     pub(crate) composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) groups: RefCell<Map<ScopeId, Group<N>>>,
-    #[allow(clippy::type_complexity)]
-    pub(crate) states: RefCell<Map<ScopeId, Map<StateId, Box<dyn Any>>>>,
-    pub(crate) subscribers: RefCell<Map<StateId, Set<ScopeId>>>,
-    pub(crate) uses: RefCell<Map<ScopeId, Set<StateId>>>,
-    pub(crate) dirty_states: RefCell<Set<StateId>>,
+    pub(crate) state_data: RefCell<StateData>,
     pub(crate) key_stack: RefCell<Vec<usize>>,
+    current_scope: Cell<ScopeId>,
     dirty_scopes: RefCell<Set<ScopeId>>,
-    current_scope: RefCell<ScopeId>,
     child_count_stack: RefCell<Vec<usize>>,
     mount_scopes: RefCell<Set<ScopeId>>,
     unmount_scopes: RefCell<Set<ScopeId>>,
@@ -79,14 +84,17 @@ where
 {
     pub fn new() -> Self {
         Self {
+            is_initialized: Cell::new(false),
             composables: RefCell::new(Map::new()),
             new_composables: RefCell::new(Map::new()),
             groups: RefCell::new(Map::new()),
-            current_scope: RefCell::new(ScopeId::new()),
-            states: RefCell::new(Map::new()),
-            subscribers: RefCell::new(Map::new()),
-            uses: RefCell::new(Map::new()),
-            dirty_states: RefCell::new(Set::new()),
+            state_data: RefCell::new(StateData {
+                states: Map::new(),
+                subscribers: Map::new(),
+                uses: Map::new(),
+                dirty_states: Set::new(),
+            }),
+            current_scope: Cell::new(ScopeId::new()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
@@ -97,14 +105,17 @@ where
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
+            is_initialized: Cell::new(false),
             composables: RefCell::new(Map::with_capacity(capacity)),
             new_composables: RefCell::new(Map::with_capacity(capacity)),
             groups: RefCell::new(Map::with_capacity(capacity)),
-            current_scope: RefCell::new(ScopeId::new()),
-            states: RefCell::new(Map::new()),
-            subscribers: RefCell::new(Map::new()),
-            uses: RefCell::new(Map::new()),
-            dirty_states: RefCell::new(Set::new()),
+            state_data: RefCell::new(StateData {
+                states: Map::new(),
+                subscribers: Map::new(),
+                uses: Map::new(),
+                dirty_states: Set::new(),
+            }),
+            current_scope: Cell::new(ScopeId::new()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
@@ -129,20 +140,16 @@ where
         let mut new_composables = c.new_composables.borrow_mut();
         let mut composables = c.composables.borrow_mut();
         composables.extend(new_composables.drain());
-        let mut unmount_scopes = c.unmount_scopes.borrow_mut();
-        let mut mount_scopes = c.mount_scopes.borrow_mut();
-        unmount_scopes.clear();
-        mount_scopes.clear();
+        c.is_initialized.set(true);
         Recomposer { owner, composer }
     }
 
     pub(crate) fn recompose(&self) {
         let affected_scopes = {
-            let mut dirty_states = self.dirty_states.borrow_mut();
-            let mut affected_scopes = Set::with_capacity(dirty_states.len());
-            let subscribers = self.subscribers.borrow_mut();
-            for state_id in dirty_states.drain() {
-                if let Some(scopes) = subscribers.get(&state_id) {
+            let mut state_data = self.state_data.borrow_mut();
+            let mut affected_scopes = Set::with_capacity(state_data.dirty_states.len());
+            for state_id in state_data.dirty_states.drain().collect::<Vec<_>>() {
+                if let Some(scopes) = state_data.subscribers.get(&state_id) {
                     affected_scopes.extend(scopes.iter().cloned());
                 }
             }
@@ -163,23 +170,21 @@ where
         }
         let mut composables = self.composables.borrow_mut();
         let mut groups = self.groups.borrow_mut();
-        let mut states = self.states.borrow_mut();
-        let mut subs = self.subscribers.borrow_mut();
-        let mut uses = self.uses.borrow_mut();
+        let mut state_data = self.state_data.borrow_mut();
         let mut unmount_scopes = self.unmount_scopes.borrow_mut();
         let mut mount_scopes = self.mount_scopes.borrow_mut();
         for s in unmount_scopes.difference(&mount_scopes) {
             composables.remove(s);
             groups.remove(s);
-            if let Some(scope_states) = states.remove(s) {
+            if let Some(scope_states) = state_data.states.remove(s) {
                 for state in scope_states.keys() {
-                    subs.remove(state);
+                    state_data.subscribers.remove(state);
                 }
             }
-            let use_states = uses.remove(s);
+            let use_states = state_data.uses.remove(s);
             if let Some(use_states) = use_states {
                 for state in use_states {
-                    if let Some(subscribers) = subs.get_mut(&state) {
+                    if let Some(subscribers) = state_data.subscribers.get_mut(&state) {
                         subscribers.remove(s);
                     }
                 }
@@ -215,8 +220,9 @@ where
             if let Some(key) = c.key_stack.borrow().last().cloned() {
                 scope.set_key(key);
             }
+            let is_visited = c.is_visited(scope.id);
             let is_dirty = c.is_dirty(scope.id);
-            if !is_dirty && c.is_visited(scope.id) {
+            if !is_dirty && is_visited {
                 c.skip_group();
                 return;
             }
@@ -243,17 +249,25 @@ where
                         });
                     }
                 }
-                if let Some(curr_child_idx) = parent_child_idx {
-                    let parent_grp = groups.get_mut(&parent.id).unwrap();
-                    if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
-                        if existing_child != scope.id {
-                            //println!("replace grp {:?} by {:?}", existing_child, scope.id);
-                            parent_grp.children[curr_child_idx] = scope.id;
-                            c.unmount_scopes.borrow_mut().insert(existing_child);
+                if c.is_initialized.get() {
+                    if let Some(curr_child_idx) = parent_child_idx {
+                        let parent_grp = groups.get_mut(&parent.id).unwrap();
+                        if let Some(existing_child) =
+                            parent_grp.children.get(curr_child_idx).cloned()
+                        {
+                            if existing_child != scope.id {
+                                //println!("replace grp {:?} by {:?}", existing_child, scope.id);
+                                parent_grp.children[curr_child_idx] = scope.id;
+                                c.unmount_scopes.borrow_mut().insert(existing_child);
+                            }
+                        } else {
+                            //println!("new grp {:?}", scope.id);
+                            c.mount_scopes.borrow_mut().insert(scope.id);
+                            parent_grp.children.push(scope.id);
                         }
-                    } else {
-                        //println!("new grp {:?}", scope.id);
-                        c.mount_scopes.borrow_mut().insert(scope.id);
+                    }
+                } else {
+                    if let Some(parent_grp) = groups.get_mut(&parent.id) {
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -282,10 +296,14 @@ where
     {
         let composable = move || {
             let parent = parent;
-            let scope = scope;
+            let mut scope = scope;
             let c = parent.composer.read();
+            if let Some(key) = c.key_stack.borrow().last().cloned() {
+                scope.set_key(key);
+            }
+            let is_visited = c.is_visited(scope.id);
             let is_dirty = c.is_dirty(scope.id);
-            if !is_dirty && c.is_visited(scope.id) {
+            if !is_dirty && is_visited {
                 c.skip_group();
                 return;
             }
@@ -297,17 +315,25 @@ where
                     parent: parent.id,
                     children: Vec::new(),
                 });
-                if let Some(curr_child_idx) = parent_child_idx {
-                    let parent_grp = groups.get_mut(&parent.id).unwrap();
-                    if let Some(existing_child) = parent_grp.children.get(curr_child_idx).cloned() {
-                        if existing_child != scope.id {
-                            //println!("replace grp {:?} by {:?}", existing_child, scope.id);
-                            parent_grp.children[curr_child_idx] = scope.id;
-                            c.unmount_scopes.borrow_mut().insert(existing_child);
+                if c.is_initialized.get() {
+                    if let Some(curr_child_idx) = parent_child_idx {
+                        let parent_grp = groups.get_mut(&parent.id).unwrap();
+                        if let Some(existing_child) =
+                            parent_grp.children.get(curr_child_idx).cloned()
+                        {
+                            if existing_child != scope.id {
+                                //println!("replace grp {:?} by {:?}", existing_child, scope.id);
+                                parent_grp.children[curr_child_idx] = scope.id;
+                                c.unmount_scopes.borrow_mut().insert(existing_child);
+                            }
+                        } else {
+                            //println!("new grp {:?}", scope.id);
+                            c.mount_scopes.borrow_mut().insert(scope.id);
+                            parent_grp.children.push(scope.id);
                         }
-                    } else {
-                        //println!("new grp {:?}", scope.id);
-                        c.mount_scopes.borrow_mut().insert(scope.id);
+                    }
+                } else {
+                    if let Some(parent_grp) = groups.get_mut(&parent.id) {
                         parent_grp.children.push(scope.id);
                     }
                 }
@@ -398,13 +424,12 @@ where
 
     #[inline(always)]
     pub(crate) fn get_current_scope(&self) -> ScopeId {
-        *self.current_scope.borrow()
+        self.current_scope.get()
     }
 
     #[inline(always)]
     fn set_current_scope(&self, scope: ScopeId) {
-        let mut current_scope = self.current_scope.borrow_mut();
-        *current_scope = scope;
+        self.current_scope.set(scope);
     }
 
     #[inline(always)]

@@ -36,18 +36,16 @@ where
         T: Clone,
     {
         let c = self.composer.read();
+        let mut state_data = c.state_data.borrow_mut();
         // add current_scope to subscribers
         let current_scope = c.get_current_scope();
-        let mut subscribers = c.subscribers.borrow_mut();
-        let state_subscribers = subscribers.entry(self.id).or_default();
+        let state_subscribers = state_data.subscribers.entry(self.id).or_default();
         state_subscribers.insert(current_scope);
         // add state to scope uses
-        let mut uses = c.uses.borrow_mut();
-        let scope_uses = uses.entry(current_scope).or_default();
+        let scope_uses = state_data.uses.entry(current_scope).or_default();
         scope_uses.insert(self.id);
         // get state
-        let states = c.states.borrow();
-        let scope_states = states.get(&self.scope_id).unwrap();
+        let scope_states = state_data.states.get(&self.scope_id).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         state.clone()
@@ -55,12 +53,11 @@ where
 
     pub fn set(&self, value: T) {
         let c = self.composer.read();
+        let mut state_data = c.state_data.borrow_mut();
         // update dirty states
-        let mut dirty_states = c.dirty_states.borrow_mut();
-        dirty_states.insert(self.id);
+        state_data.dirty_states.insert(self.id);
         // update state
-        let mut states = c.states.borrow_mut();
-        let scope_states = states.entry(self.scope_id).or_default();
+        let scope_states = state_data.states.entry(self.scope_id).or_default();
         let val = scope_states.get_mut(&self.id).unwrap();
         *val = Box::new(value);
     }
