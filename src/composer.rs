@@ -7,7 +7,7 @@ use std::hash::BuildHasher;
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{Loc, Root, Scope, ScopeId, StateId};
+use crate::{Root, Scope, ScopeId, StateId};
 
 pub(crate) trait HashMapExt {
     fn new() -> Self;
@@ -48,35 +48,6 @@ where
 pub(crate) type Map<K, V> = FxHashMap<K, V>;
 pub(crate) type Set<K> = FxHashSet<K>;
 
-pub(crate) struct LocMapper {
-    map: Map<usize, u32>,
-    next_id: u32,
-}
-
-impl LocMapper {
-    pub fn new() -> Self {
-        LocMapper {
-            map: Map::new(),
-            next_id: u32::MIN,
-        }
-    }
-
-    pub fn transform(&mut self, n: usize) -> u32 {
-        if let Some(&id) = self.map.get(&n) {
-            id
-        } else {
-            let id = self.next_id;
-            self.map.insert(n, id);
-            let (next, overflow) = self.next_id.overflowing_add(1);
-            if overflow {
-                panic!("Too many unique Locations");
-            }
-            self.next_id = next;
-            id
-        }
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Group<N> {
@@ -94,7 +65,6 @@ pub(crate) struct StateData {
 }
 
 pub struct Composer<N> {
-    loc_mapper: RefCell<LocMapper>,
     is_initialized: Cell<bool>,
     pub(crate) composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
     pub(crate) new_composables: RefCell<Map<ScopeId, Box<dyn Fn()>>>,
@@ -114,7 +84,6 @@ where
 {
     pub fn new() -> Self {
         Self {
-            loc_mapper: RefCell::new(LocMapper::new()),
             is_initialized: Cell::new(false),
             composables: RefCell::new(Map::new()),
             new_composables: RefCell::new(Map::new()),
@@ -125,7 +94,7 @@ where
                 uses: Map::new(),
                 dirty_states: Set::new(),
             }),
-            current_scope: Cell::new(ScopeId::new(0)),
+            current_scope: Cell::new(ScopeId::new()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
@@ -136,7 +105,6 @@ where
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            loc_mapper: RefCell::new(LocMapper::new()),
             is_initialized: Cell::new(false),
             composables: RefCell::new(Map::with_capacity(capacity)),
             new_composables: RefCell::new(Map::with_capacity(capacity)),
@@ -147,33 +115,13 @@ where
                 uses: Map::new(),
                 dirty_states: Set::new(),
             }),
-            current_scope: Cell::new(ScopeId::new(0)),
+            current_scope: Cell::new(ScopeId::new()),
             key_stack: RefCell::new(Vec::new()),
             dirty_scopes: RefCell::new(Set::new()),
             child_count_stack: RefCell::new(Vec::new()),
             mount_scopes: RefCell::new(Set::new()),
             unmount_scopes: RefCell::new(Set::new()),
         }
-    }
-
-    #[track_caller]
-    #[inline(always)]
-    pub(crate) fn new_scope(&self) -> ScopeId {
-        let loc = Loc::new();
-        let id = self.loc_mapper.borrow_mut().transform(loc.id());
-        let loc = Loc::new();
-        let id = (id as u64) << 32;
-        ScopeId::new(id)
-    }
-
-    #[track_caller]
-    #[inline(always)]
-    pub(crate) fn new_keyed_scope(&self, key: u32) -> ScopeId {
-        let loc = Loc::new();
-        let id = self.loc_mapper.borrow_mut().transform(loc.id());
-        let loc = Loc::new();
-        let id = (id as u64) << 32 + (key as u64);
-        ScopeId::new(id)
     }
 
     #[track_caller]
@@ -184,7 +132,7 @@ where
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(1024));
         let c = composer.read();
-        let id = c.new_scope();
+        let id = ScopeId::new();
         let scope = Scope::new(id, composer);
         c.start_root(scope.id);
         root(scope);
@@ -318,10 +266,8 @@ where
                             parent_grp.children.push(scope.id);
                         }
                     }
-                } else {
-                    if let Some(parent_grp) = groups.get_mut(&parent.id) {
-                        parent_grp.children.push(scope.id);
-                    }
+                } else if let Some(parent_grp) = groups.get_mut(&parent.id) {
+                    parent_grp.children.push(scope.id);
                 }
             }
             content(scope);
@@ -384,10 +330,8 @@ where
                             parent_grp.children.push(scope.id);
                         }
                     }
-                } else {
-                    if let Some(parent_grp) = groups.get_mut(&parent.id) {
-                        parent_grp.children.push(scope.id);
-                    }
+                } else if let Some(parent_grp) = groups.get_mut(&parent.id) {
+                    parent_grp.children.push(scope.id);
                 }
             }
             content(scope);
@@ -407,7 +351,7 @@ where
 
     #[inline(always)]
     fn start_root(&self, scope: ScopeId) {
-        let parent = ScopeId::new(0);
+        let parent = ScopeId::new();
         self.set_current_scope(scope);
         self.child_count_stack.borrow_mut().push(0);
         self.groups.borrow_mut().insert(

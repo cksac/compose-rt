@@ -10,7 +10,7 @@ pub struct Loc {
 impl Loc {
     #[track_caller]
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             location: Location::caller(),
         }

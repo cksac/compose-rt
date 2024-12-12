@@ -1,13 +1,11 @@
 use std::any::Any;
-use std::cell::RefCell;
 use std::fmt::{self, Debug, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
-use crate::composer::{HashMapExt, Map};
-use crate::{Composer, Loc, State, StateId};
+use crate::{offset_to_anchor, Composer, Loc, State, StateId};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
@@ -48,8 +46,7 @@ where
     where
         C: 'static,
     {
-        let c = self.composer.read();
-        let id = c.new_scope();
+        let id = ScopeId::new();
         Scope::new(id, self.composer)
     }
 
@@ -59,8 +56,7 @@ where
     where
         C: 'static,
     {
-        let c = self.composer.read();
-        let id = c.new_keyed_scope(key);
+        let id = ScopeId::with_key(key);
         Scope::new(id, self.composer)
     }
 
@@ -173,15 +169,24 @@ pub struct ScopeId(u64);
 
 impl ScopeId {
     #[track_caller]
-    #[inline]
-    pub fn new(id: u64) -> Self {
+    #[inline(always)]
+    pub fn new() -> Self {
+        let id = (offset_to_anchor() as u64) << 32;
         Self(id)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub fn with_key(key: u32) -> Self {
+        let mut scope = Self::new();
+        scope.0 += key as u64;
+        scope
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "ScopeId({})", self.0)
     }
 }
 
