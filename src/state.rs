@@ -7,7 +7,6 @@ use crate::{Composer, Loc, ScopeId};
 
 pub struct State<T, N> {
     ty: PhantomData<T>,
-    scope_id: ScopeId,
     id: StateId,
     composer: GenerationalBox<Composer<N>>,
 }
@@ -18,17 +17,17 @@ where
     N: Debug + 'static,
 {
     #[inline(always)]
-    pub(crate) fn new(
-        scope_id: ScopeId,
-        id: StateId,
-        composer: GenerationalBox<Composer<N>>,
-    ) -> Self {
+    pub(crate) fn new(id: StateId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
             ty: PhantomData,
-            scope_id,
             id,
             composer,
         }
+    }
+
+    #[inline(always)]
+    pub fn scope_id(&self) -> ScopeId {
+        self.id.scope_id
     }
 
     pub fn get(&self) -> T
@@ -45,7 +44,7 @@ where
         let scope_uses = state_data.uses.entry(current_scope).or_default();
         scope_uses.insert(self.id);
         // get state
-        let scope_states = state_data.states.get(&self.scope_id).unwrap();
+        let scope_states = state_data.states.get(&self.scope_id()).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         state.clone()
@@ -57,7 +56,7 @@ where
         // update dirty states
         state_data.dirty_states.insert(self.id);
         // update state
-        let scope_states = state_data.states.entry(self.scope_id).or_default();
+        let scope_states = state_data.states.entry(self.scope_id()).or_default();
         let val = scope_states.get_mut(&self.id).unwrap();
         *val = Box::new(value);
     }
@@ -82,19 +81,23 @@ impl<T, N> Copy for State<T, N> {}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateId {
-    pub loc: Loc,
+    pub(crate) scope_id: ScopeId,
+    loc: Loc,
 }
 
 impl StateId {
     #[track_caller]
-    pub fn new() -> Self {
-        let loc = Loc::new();
-        Self { loc }
+    #[inline(always)]
+    pub fn new(scope_id: ScopeId) -> Self {
+        Self {
+            scope_id,
+            loc: Loc::new(),
+        }
     }
 }
 
 impl Debug for StateId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.loc)
+        write!(f, "StateId({:?},{:?})", self.scope_id.0, self.loc)
     }
 }

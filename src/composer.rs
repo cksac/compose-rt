@@ -475,8 +475,10 @@ where
     N: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let state_data = self.state_data.borrow();
         f.debug_struct("Composer")
             .field("groups", &self.groups)
+            .field("states", &state_data.states)
             .finish()
     }
 }
@@ -487,8 +489,10 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let c = self.composer.read();
+        let state_data = c.state_data.borrow();
         f.debug_struct("Recomposer")
             .field("groups", &c.groups)
+            .field("states", &state_data.states)
             .finish()
     }
 }

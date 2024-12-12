@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
-use crate::{offset_to_anchor, Composer, Loc, State, StateId};
+use crate::{offset_to_anchor, Composer, State, StateId};
 
 pub struct Scope<S, N> {
     _scope: PhantomData<S>,
@@ -66,13 +66,13 @@ where
         T: 'static,
         F: Fn() -> T + 'static,
     {
-        let c = self.composer.read();
         let scope_id = self.id;
-        let id = StateId::new();
+        let c = self.composer.read();
         let mut state_data = c.state_data.borrow_mut();
         let scope_states = state_data.states.entry(scope_id).or_default();
+        let id = StateId::new(scope_id);
         let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
-        State::new(scope_id, id, self.composer)
+        State::new(id, self.composer)
     }
 
     #[track_caller]
@@ -165,7 +165,7 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScopeId(u64);
+pub struct ScopeId(pub(crate) u64);
 
 impl ScopeId {
     #[track_caller]
