@@ -15,5 +15,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build
       run: cargo build --verbose
-    - name: Run ui example
-      run: cargo run --example ui
+    - name: Run example
+      run: cargo run --example basic
