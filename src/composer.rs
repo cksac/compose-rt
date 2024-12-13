@@ -1,50 +1,10 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::hash::BuildHasher;
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
-use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::map::{HashMapExt, HashSetExt, Map, Set};
 use crate::{Root, Scope, ScopeId, StateId};
-
-pub(crate) trait HashMapExt {
-    fn new() -> Self;
-    fn with_capacity(capacity: usize) -> Self;
-}
-
-impl<K, V, S> HashMapExt for std::collections::HashMap<K, V, S>
-where
-    S: BuildHasher + Default,
-{
-    fn new() -> Self {
-        std::collections::HashMap::with_hasher(S::default())
-    }
-
-    fn with_capacity(capacity: usize) -> Self {
-        std::collections::HashMap::with_capacity_and_hasher(capacity, S::default())
-    }
-}
-
-pub(crate) trait HashSetExt {
-    fn new() -> Self;
-    fn with_capacity(capacity: usize) -> Self;
-}
-
-impl<K, S> HashSetExt for std::collections::HashSet<K, S>
-where
-    S: BuildHasher + Default,
-{
-    fn new() -> Self {
-        std::collections::HashSet::with_hasher(S::default())
-    }
-
-    fn with_capacity(capacity: usize) -> Self {
-        std::collections::HashSet::with_capacity_and_hasher(capacity, S::default())
-    }
-}
-
-pub(crate) type Map<K, V> = FxHashMap<K, V>;
-pub(crate) type Set<K> = FxHashSet<K>;
 
 pub trait Composable {
     fn compose(&self);
@@ -61,6 +21,12 @@ where
 
     fn clone_box(&self) -> Box<dyn Composable> {
         Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn Composable> {
+    fn clone(&self) -> Self {
+        self.clone_box()
     }
 }
 
@@ -115,19 +81,20 @@ where
             is_initialized: false,
             composables: Map::with_capacity(capacity),
             groups: Map::with_capacity(capacity),
-            states: Map::new(),
-            subscribers: Map::new(),
-            uses: Map::new(),
+            states: Map::with_capacity(capacity),
+            subscribers: Map::with_capacity(capacity),
+            uses: Map::with_capacity(capacity),
             dirty_states: Set::new(),
             current_scope: ScopeId::new(),
             key_stack: Vec::new(),
             dirty_scopes: Set::new(),
             child_count_stack: Vec::new(),
-            mount_scopes: Set::new(),
+            mount_scopes: Set::with_capacity(capacity),
             unmount_scopes: Set::new(),
         }
     }
 
+    // TODO: fine control over the capacity of the HashMaps
     #[track_caller]
     pub fn compose<F>(root: F) -> Recomposer<N>
     where
@@ -231,8 +198,8 @@ where
         }
         let mut composables = Vec::with_capacity(c.dirty_scopes.len());
         for scope in &c.dirty_scopes {
-            if let Some(composable) = c.composables.get(scope) {
-                composables.push(composable.clone_box());
+            if let Some(composable) = c.composables.get(scope).cloned() {
+                composables.push(composable);
             }
         }
         drop(c);

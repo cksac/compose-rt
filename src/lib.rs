@@ -1,7 +1,6 @@
 #![allow(clippy::new_without_default)]
 
 mod loc;
-
 pub use loc::Loc;
 
 mod composer;
@@ -12,6 +11,8 @@ pub use state::{State, StateId};
 
 mod scope;
 pub use scope::{Root, Scope, ScopeId};
+
+mod map;
 
 const LOC_ANCHOR: Loc = Loc::new();
 
