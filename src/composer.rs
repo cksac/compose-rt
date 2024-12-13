@@ -132,11 +132,13 @@ where
         let child_count = self.child_count_stack.pop().unwrap();
         let old_child_count = self.nodes[&scope].children.len();
         if child_count < old_child_count {
-            self.nodes
+            let unmount_scopes = self
+                .nodes
                 .get_mut(&scope)
                 .unwrap()
                 .children
-                .truncate(child_count);
+                .drain(child_count..);
+            self.unmount_scopes.extend(unmount_scopes);
         }
     }
 
@@ -153,16 +155,13 @@ where
         let child_count = self.child_count_stack.pop().unwrap();
         let old_child_count = self.nodes[&scope].children.len();
         if child_count < old_child_count {
-            let removed = self
+            let unmount_scopes = self
                 .nodes
                 .get_mut(&scope)
                 .unwrap()
                 .children
-                .drain(child_count..)
-                .collect::<Vec<_>>();
-            for child in removed {
-                self.nodes.remove(&child);
-            }
+                .drain(child_count..);
+            self.unmount_scopes.extend(unmount_scopes);
         }
         if let Some(parent_child_count) = self.child_count_stack.last_mut() {
             *parent_child_count += 1;
