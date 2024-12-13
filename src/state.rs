@@ -6,9 +6,9 @@ use generational_box::GenerationalBox;
 use crate::{Composer, Loc, ScopeId};
 
 pub struct State<T, N> {
-    ty: PhantomData<T>,
-    id: StateId,
+    pub id: StateId,
     composer: GenerationalBox<Composer<N>>,
+    ty: PhantomData<T>,
 }
 
 impl<T, N> State<T, N>
@@ -19,15 +19,10 @@ where
     #[inline(always)]
     pub(crate) fn new(id: StateId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
-            ty: PhantomData,
             id,
             composer,
+            ty: PhantomData,
         }
-    }
-
-    #[inline(always)]
-    pub fn scope_id(&self) -> ScopeId {
-        self.id.scope_id
     }
 
     pub fn get(&self) -> T
@@ -36,14 +31,11 @@ where
     {
         let mut c = self.composer.write();
         let current_scope = c.current_scope;
-        // add current_scope to subscribers
-        let state_subscribers = c.subscribers.entry(self.id).or_default();
-        state_subscribers.insert(current_scope);
-        // add state to scope uses
-        let scope_uses = c.uses.entry(current_scope).or_default();
-        scope_uses.insert(self.id);
-        // get state
-        let scope_states = c.states.get(&self.scope_id()).unwrap();
+        let used_by = c.used_by.entry(self.id).or_default();
+        used_by.insert(current_scope);
+        let uses = c.uses.entry(current_scope).or_default();
+        uses.insert(self.id);
+        let scope_states = c.states.get(&self.id.scope_id).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         state.clone()
@@ -51,10 +43,8 @@ where
 
     pub fn set(&self, value: T) {
         let mut c = self.composer.write();
-        // update dirty states
         c.dirty_states.insert(self.id);
-        // update state
-        let scope_states = c.states.entry(self.scope_id()).or_default();
+        let scope_states = c.states.entry(self.id.scope_id).or_default();
         let val = scope_states.get_mut(&self.id).unwrap();
         *val = Box::new(value);
     }

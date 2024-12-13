@@ -10,9 +10,9 @@ use crate::composer::Group;
 use crate::{offset_to_anchor, Composer, State, StateId};
 
 pub struct Scope<S, N> {
-    _scope: PhantomData<S>,
     pub id: ScopeId,
-    pub(crate) composer: GenerationalBox<Composer<N>>,
+    composer: GenerationalBox<Composer<N>>,
+    ty: PhantomData<S>,
 }
 
 impl<S, N> Clone for Scope<S, N> {
@@ -31,9 +31,9 @@ where
     #[inline(always)]
     pub(crate) fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
         Self {
-            _scope: PhantomData,
             id,
             composer,
+            ty: PhantomData,
         }
     }
 
@@ -86,70 +86,6 @@ where
         content(*self);
         self.composer.write().key_stack.pop();
     }
-
-    // #[allow(dead_code)]
-    // pub(crate) fn create_scope<C, P, S>(&self, parent: Scope<P, N>, scope: Scope<S, N>, content: C)
-    // where
-    //     P: 'static,
-    //     S: 'static,
-    //     C: Fn(Scope<S, N>) + 'static,
-    // {
-    //     let composable = move || {
-    //         let parent = parent;
-    //         let mut scope = scope;
-    //         let mut c = parent.composer.write();
-    //         if let Some(key) = c.key_stack.borrow().last().cloned() {
-    //             scope.set_key(key);
-    //         }
-    //         let is_visited = c.is_visited(scope.id);
-    //         let is_dirty = c.is_dirty(scope.id);
-    //         if !is_dirty && is_visited {
-    //             c.skip_group();
-    //             return;
-    //         }
-    //         let parent_child_idx = c.start_group(scope.id);
-    //         {
-    //             let mut groups = c.groups.borrow_mut();
-    //             groups.entry(scope.id).or_insert_with(|| Group {
-    //                 node: None,
-    //                 parent: parent.id,
-    //                 children: Vec::new(),
-    //             });
-    //             if c.is_initialized.get() {
-    //                 if let Some(curr_child_idx) = parent_child_idx {
-    //                     let parent_grp = groups.get_mut(&parent.id).unwrap();
-    //                     if let Some(existing_child) =
-    //                         parent_grp.children.get(curr_child_idx).cloned()
-    //                     {
-    //                         if existing_child != scope.id {
-    //                             //println!("replace grp {:?} by {:?}", existing_child, scope.id);
-    //                             parent_grp.children[curr_child_idx] = scope.id;
-    //                             c.unmount_scopes.borrow_mut().insert(existing_child);
-    //                         }
-    //                     } else {
-    //                         //println!("new grp {:?}", scope.id);
-    //                         c.mount_scopes.borrow_mut().insert(scope.id);
-    //                         parent_grp.children.push(scope.id);
-    //                     }
-    //                 }
-    //             } else if let Some(parent_grp) = groups.get_mut(&parent.id) {
-    //                 parent_grp.children.push(scope.id);
-    //             }
-    //         }
-    //         drop(c);
-    //         content(scope);
-    //         let mut c = parent.composer.write();
-    //         if is_dirty {
-    //             c.clear_dirty(scope.id);
-    //         }
-    //         c.end_group(parent.id, scope.id);
-    //     };
-    //     composable();
-    //     let mut new_composables = self.composables.borrow_mut();
-    //     new_composables
-    //         .entry(scope.id)
-    //         .or_insert_with(|| Box::new(composable));
-    // }
 
     pub fn create_node<C, T, I, A, F, U>(
         &self,

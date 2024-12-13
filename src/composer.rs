@@ -43,7 +43,7 @@ pub struct Composer<N> {
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) groups: Map<ScopeId, Group<N>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
-    pub(crate) subscribers: Map<StateId, Set<ScopeId>>,
+    pub(crate) used_by: Map<StateId, Set<ScopeId>>,
     pub(crate) uses: Map<ScopeId, Set<StateId>>,
     pub(crate) dirty_states: Set<StateId>,
     pub(crate) key_stack: Vec<u32>,
@@ -64,7 +64,7 @@ where
             composables: Map::new(),
             groups: Map::new(),
             states: Map::new(),
-            subscribers: Map::new(),
+            used_by: Map::new(),
             uses: Map::new(),
             dirty_states: Set::new(),
             current_scope: ScopeId::new(),
@@ -82,7 +82,7 @@ where
             composables: Map::with_capacity(capacity),
             groups: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
-            subscribers: Map::with_capacity(capacity),
+            used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
             dirty_states: Set::new(),
             current_scope: ScopeId::new(),
@@ -192,7 +192,7 @@ where
         let mut c = self.composer.write();
         c.dirty_scopes.clear();
         for state_id in c.dirty_states.drain().collect::<Vec<_>>() {
-            if let Some(scopes) = c.subscribers.get(&state_id).cloned() {
+            if let Some(scopes) = c.used_by.get(&state_id).cloned() {
                 c.dirty_scopes.extend(scopes);
             }
         }
@@ -217,14 +217,14 @@ where
             c.groups.remove(&s);
             if let Some(scope_states) = c.states.remove(&s) {
                 for state in scope_states.keys() {
-                    c.subscribers.remove(state);
+                    c.used_by.remove(state);
                 }
             }
             let use_states = c.uses.remove(&s);
             if let Some(use_states) = use_states {
                 for state in use_states {
-                    if let Some(subscribers) = c.subscribers.get_mut(&state) {
-                        subscribers.remove(&s);
+                    if let Some(used_by) = c.used_by.get_mut(&state) {
+                        used_by.remove(&s);
                     }
                 }
             }
