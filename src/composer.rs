@@ -237,6 +237,10 @@ where
         c.unmount_scopes.clear();
     }
 
+    pub fn root_scope(&self) -> ScopeId {
+        self.composer.read().root_scope
+    }
+
     pub fn with_composer_mut<F>(&mut self, func: F)
     where
         F: FnOnce(&mut Composer<N>),
