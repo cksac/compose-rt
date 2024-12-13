@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
+use std::ops::DerefMut;
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
@@ -30,19 +31,19 @@ impl Clone for Box<dyn Composable> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Node<T> {
-    pub(crate) parent: ScopeId,
-    pub(crate) children: Vec<ScopeId>,
-    pub(crate) data: Option<T>,
+    pub parent: ScopeId,
+    pub children: Vec<ScopeId>,
+    pub data: Option<T>,
 }
 
 pub struct Composer<N> {
+    pub root_scope: ScopeId,
+    pub nodes: Map<ScopeId, Node<N>>,
+
     pub(crate) initialized: bool,
-    pub(crate) root_scope: ScopeId,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
-    pub(crate) nodes: Map<ScopeId, Node<N>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
     pub(crate) used_by: Map<StateId, Set<ScopeId>>,
     pub(crate) uses: Map<ScopeId, Set<StateId>>,
@@ -234,6 +235,14 @@ where
         }
         c.mount_scopes.clear();
         c.unmount_scopes.clear();
+    }
+
+    pub fn with_composer_mut<F>(&mut self, func: F)
+    where
+        F: FnOnce(&mut Composer<N>),
+    {
+        let mut c = self.composer.write();
+        func(c.deref_mut());
     }
 }
 
