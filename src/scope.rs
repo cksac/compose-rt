@@ -242,9 +242,9 @@ impl From<u64> for ScopeId {
     }
 }
 
-impl From<usize> for ScopeId {
-    fn from(id: usize) -> Self {
-        Self(id as u64)
+impl From<ScopeId> for u64 {
+    fn from(id: ScopeId) -> Self {
+        id.0
     }
 }
 
