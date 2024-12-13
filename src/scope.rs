@@ -234,6 +234,11 @@ impl ScopeId {
     pub fn set_key(&mut self, key: u32) {
         self.0 = self.0 & 0xFFFF_FFFF_0000_0000 | key as u64;
     }
+
+    #[inline(always)]
+    pub fn inner(&self) -> u64 {
+        self.0
+    }
 }
 
 impl Debug for ScopeId {
