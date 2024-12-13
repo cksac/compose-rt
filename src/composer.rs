@@ -41,7 +41,6 @@ pub struct Node<T> {
 pub struct Composer<N> {
     pub root_scope: ScopeId,
     pub nodes: Map<ScopeId, Node<N>>,
-
     pub(crate) initialized: bool,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
@@ -113,7 +112,6 @@ where
         composer.write().end_root(scope.id);
         let mut c = composer.write();
         c.initialized = true;
-        c.root_scope = scope.id;
         Recomposer { owner, composer }
     }
 
@@ -135,16 +133,8 @@ where
     #[inline(always)]
     pub(crate) fn end_root(&mut self, scope: ScopeId) {
         let child_count = self.child_count_stack.pop().unwrap();
-        let old_child_count = self.nodes[&scope].children.len();
-        if child_count < old_child_count {
-            let unmount_scopes = self
-                .nodes
-                .get_mut(&scope)
-                .unwrap()
-                .children
-                .drain(child_count..);
-            self.unmount_scopes.extend(unmount_scopes);
-        }
+        assert_eq!(1, child_count, "Root scope must have exactly one child");
+        self.root_scope = self.nodes[&scope].children[0];
     }
 
     #[inline(always)]
