@@ -11,7 +11,7 @@ pub struct Text;
 pub trait Html {
     fn div<C>(&self, content: C)
     where
-        C: Fn(Scope<Div>) + 'static;
+        C: Fn(Scope<Div>) + Clone + 'static;
 
     fn button<T>(&self, text: T)
     where
@@ -29,7 +29,7 @@ where
     #[track_caller]
     fn div<C>(&self, content: C)
     where
-        C: Fn(Scope<Div>) + 'static,
+        C: Fn(Scope<Div>) + Clone + 'static,
     {
         let scope = self.child_scope::<Div>();
         self.create_node(scope, content, || {}, |_| String::from("div"), |_, _| {});
@@ -105,7 +105,7 @@ fn main() {
         .parse()
         .unwrap();
     let start = std::time::Instant::now();
-    let recomposer = Composer::compose(move |s| app(s, count));
+    let mut recomposer = Composer::compose(move |s| app(s, count));
     for _ in 0..iter {
         recomposer.recompose();
     }
