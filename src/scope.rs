@@ -39,26 +39,16 @@ where
 
     #[inline(always)]
     pub(crate) fn set_key(&mut self, key: u32) {
-        self.id.0 += key as u64;
+        self.id.set_key(key);
     }
 
     #[track_caller]
     #[inline(always)]
-    pub fn child_scope<C>(&self) -> Scope<C, N>
+    pub fn child<C>(&self) -> Scope<C, N>
     where
         C: 'static,
     {
         let id = ScopeId::new();
-        Scope::new(id, self.composer)
-    }
-
-    #[track_caller]
-    #[inline(always)]
-    pub fn child_scope_with_key<C>(&self, key: u32) -> Scope<C, N>
-    where
-        C: 'static,
-    {
-        let id = ScopeId::with_key(key);
         Scope::new(id, self.composer)
     }
 
@@ -68,10 +58,9 @@ where
         T: 'static,
         F: Fn() -> T + 'static,
     {
-        let scope_id = self.id;
         let mut c = self.composer.write();
-        let scope_states = c.states.entry(scope_id).or_default();
-        let id = StateId::new(scope_id);
+        let id = StateId::new(self.id);
+        let scope_states = c.states.entry(self.id).or_default();
         let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
         State::new(id, self.composer)
     }
@@ -106,7 +95,7 @@ where
         let composable = move || {
             let mut scope = scope;
             let mut c = parent.composer.write();
-            if let Some(key) = c.key_stack.last().cloned() {
+            if let Some(key) = c.key_stack.last().copied() {
                 scope.set_key(key);
             }
             let is_visited = c.nodes.contains_key(&scope.id);
@@ -185,7 +174,7 @@ where
         C: Fn(Scope<T, N>) + Clone + 'static,
         I: Fn() -> A + Clone + 'static,
         A: 'static,
-        N: AnyNode<E>,
+        N: AnyData<E>,
         E: 'static,
         F: Fn(A) -> E + Clone + 'static,
         U: Fn(&mut E, A) + Clone + 'static,
@@ -196,23 +185,23 @@ where
             input,
             move |args| {
                 let e = factory(args);
-                AnyNode::new(e)
+                AnyData::new(e)
             },
             move |n, args| {
-                let e = n.val_mut();
+                let e = n.value_mut();
                 update(e, args);
             },
         );
     }
 }
 
-pub trait AnyNode<T> {
+pub trait AnyData<T> {
     fn new(val: T) -> Self;
-    fn val(&self) -> &T;
-    fn val_mut(&mut self) -> &mut T;
+    fn value(&self) -> &T;
+    fn value_mut(&mut self) -> &mut T;
 }
 
-impl<T> AnyNode<T> for Box<dyn Any>
+impl<T> AnyData<T> for Box<dyn Any>
 where
     T: 'static,
 {
@@ -220,11 +209,11 @@ where
         Box::new(val)
     }
 
-    fn val(&self) -> &T {
+    fn value(&self) -> &T {
         self.downcast_ref::<T>().unwrap()
     }
 
-    fn val_mut(&mut self) -> &mut T {
+    fn value_mut(&mut self) -> &mut T {
         self.downcast_mut::<T>().unwrap()
     }
 }
@@ -242,10 +231,8 @@ impl ScopeId {
 
     #[track_caller]
     #[inline(always)]
-    pub fn with_key(key: u32) -> Self {
-        let mut scope = Self::new();
-        scope.0 += key as u64;
-        scope
+    pub fn set_key(&mut self, key: u32) {
+        self.0 = self.0 & 0xFFFF_FFFF_0000_0000 | key as u64;
     }
 }
 

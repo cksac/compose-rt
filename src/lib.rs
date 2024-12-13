@@ -4,22 +4,22 @@ mod loc;
 pub use loc::Loc;
 
 mod composer;
-pub use composer::{Composer, Recomposer};
+pub use composer::{Composable, Composer, Recomposer};
 
 mod state;
 pub use state::{State, StateId};
 
 mod scope;
-pub use scope::{Root, Scope, ScopeId};
+pub use scope::{AnyData, Root, Scope, ScopeId};
 
 mod map;
 
-const LOC_ANCHOR: Loc = Loc::new();
+const ANCHOR: Loc = Loc::new();
 
 #[track_caller]
 #[inline(always)]
 pub(crate) fn offset_to_anchor() -> i64 {
-    let anchor = LOC_ANCHOR.id() as i64;
+    let anchor = ANCHOR.id() as i64;
     let loc = Loc::new().id() as i64;
     anchor - loc
 }
