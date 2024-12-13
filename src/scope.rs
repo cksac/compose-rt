@@ -236,6 +236,18 @@ impl ScopeId {
     }
 }
 
+impl From<u64> for ScopeId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<usize> for ScopeId {
+    fn from(id: usize) -> Self {
+        Self(id as u64)
+    }
+}
+
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "ScopeId({})", self.0)
