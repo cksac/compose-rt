@@ -91,7 +91,7 @@ fn app(s: Scope<Root>, n: usize) {
 fn main() {
     let count = env::args()
         .nth(1)
-        .unwrap_or("1".to_string())
+        .unwrap_or("2".to_string())
         .parse()
         .unwrap();
     let iter = env::args()

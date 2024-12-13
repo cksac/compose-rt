@@ -12,9 +12,11 @@ repository = "https://github.com/cksac/compose-rt"
 homepage = "https://github.com/cksac/compose-rt"
 
 
+
 [dependencies]
 generational-box = "0.5"
 rustc-hash = "2.1"
+taffy = "0.7.0"
 
 
 [dev-dependencies]

@@ -180,7 +180,7 @@ where
 pub struct Recomposer<N> {
     #[allow(dead_code)]
     owner: Owner,
-    composer: GenerationalBox<Composer<N>>,
+    pub(crate) composer: GenerationalBox<Composer<N>>,
 }
 
 impl<N> Recomposer<N>
