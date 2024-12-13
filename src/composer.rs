@@ -1,7 +1,4 @@
 use std::any::Any;
-use std::cell::{Cell, RefCell};
-use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::BuildHasher;
 
@@ -75,19 +72,14 @@ pub struct Group<N> {
     pub(crate) node: Option<N>,
 }
 
-pub(crate) struct StateData {
-    #[allow(clippy::type_complexity)]
-    pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
-    pub(crate) subscribers: Map<StateId, Set<ScopeId>>,
-    pub(crate) uses: Map<ScopeId, Set<StateId>>,
-    pub(crate) dirty_states: Set<StateId>,
-}
-
 pub struct Composer<N> {
     pub(crate) is_initialized: bool,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) groups: Map<ScopeId, Group<N>>,
-    pub(crate) state_data: StateData,
+    pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
+    pub(crate) subscribers: Map<StateId, Set<ScopeId>>,
+    pub(crate) uses: Map<ScopeId, Set<StateId>>,
+    pub(crate) dirty_states: Set<StateId>,
     pub(crate) key_stack: Vec<u32>,
     pub(crate) current_scope: ScopeId,
     pub(crate) dirty_scopes: Set<ScopeId>,
@@ -105,12 +97,10 @@ where
             is_initialized: false,
             composables: Map::new(),
             groups: Map::new(),
-            state_data: StateData {
-                states: Map::new(),
-                subscribers: Map::new(),
-                uses: Map::new(),
-                dirty_states: Set::new(),
-            },
+            states: Map::new(),
+            subscribers: Map::new(),
+            uses: Map::new(),
+            dirty_states: Set::new(),
             current_scope: ScopeId::new(),
             key_stack: Vec::new(),
             dirty_scopes: Set::new(),
@@ -125,12 +115,10 @@ where
             is_initialized: false,
             composables: Map::with_capacity(capacity),
             groups: Map::with_capacity(capacity),
-            state_data: StateData {
-                states: Map::new(),
-                subscribers: Map::new(),
-                uses: Map::new(),
-                dirty_states: Set::new(),
-            },
+            states: Map::new(),
+            subscribers: Map::new(),
+            uses: Map::new(),
+            dirty_states: Set::new(),
             current_scope: ScopeId::new(),
             key_stack: Vec::new(),
             dirty_scopes: Set::new(),
@@ -154,80 +142,8 @@ where
         composer.write().end_root(scope.id);
         let mut c = composer.write();
         c.is_initialized = true;
-        Recomposer {
-            owner,
-            composer,
-            composables: c
-                .composables
-                .iter()
-                .map(|(k, v)| (*k, v.clone_box()))
-                .collect(),
-        }
+        Recomposer { owner, composer }
     }
-
-    // #[allow(dead_code)]
-    // pub(crate) fn create_scope<C, P, S>(&self, parent: Scope<P, N>, scope: Scope<S, N>, content: C)
-    // where
-    //     P: 'static,
-    //     S: 'static,
-    //     C: Fn(Scope<S, N>) + 'static,
-    // {
-    //     let composable = move || {
-    //         let parent = parent;
-    //         let mut scope = scope;
-    //         let mut c = parent.composer.write();
-    //         if let Some(key) = c.key_stack.borrow().last().cloned() {
-    //             scope.set_key(key);
-    //         }
-    //         let is_visited = c.is_visited(scope.id);
-    //         let is_dirty = c.is_dirty(scope.id);
-    //         if !is_dirty && is_visited {
-    //             c.skip_group();
-    //             return;
-    //         }
-    //         let parent_child_idx = c.start_group(scope.id);
-    //         {
-    //             let mut groups = c.groups.borrow_mut();
-    //             groups.entry(scope.id).or_insert_with(|| Group {
-    //                 node: None,
-    //                 parent: parent.id,
-    //                 children: Vec::new(),
-    //             });
-    //             if c.is_initialized.get() {
-    //                 if let Some(curr_child_idx) = parent_child_idx {
-    //                     let parent_grp = groups.get_mut(&parent.id).unwrap();
-    //                     if let Some(existing_child) =
-    //                         parent_grp.children.get(curr_child_idx).cloned()
-    //                     {
-    //                         if existing_child != scope.id {
-    //                             //println!("replace grp {:?} by {:?}", existing_child, scope.id);
-    //                             parent_grp.children[curr_child_idx] = scope.id;
-    //                             c.unmount_scopes.borrow_mut().insert(existing_child);
-    //                         }
-    //                     } else {
-    //                         //println!("new grp {:?}", scope.id);
-    //                         c.mount_scopes.borrow_mut().insert(scope.id);
-    //                         parent_grp.children.push(scope.id);
-    //                     }
-    //                 }
-    //             } else if let Some(parent_grp) = groups.get_mut(&parent.id) {
-    //                 parent_grp.children.push(scope.id);
-    //             }
-    //         }
-    //         drop(c);
-    //         content(scope);
-    //         let mut c = parent.composer.write();
-    //         if is_dirty {
-    //             c.clear_dirty(scope.id);
-    //         }
-    //         c.end_group(parent.id, scope.id);
-    //     };
-    //     composable();
-    //     let mut new_composables = self.composables.borrow_mut();
-    //     new_composables
-    //         .entry(scope.id)
-    //         .or_insert_with(|| Box::new(composable));
-    // }
 
     #[inline(always)]
     pub(crate) fn start_root(&mut self, scope: ScopeId) {
@@ -298,7 +214,6 @@ where
 pub struct Recomposer<N> {
     #[allow(dead_code)]
     owner: Owner,
-    composables: Map<ScopeId, Box<dyn Composable>>,
     composer: GenerationalBox<Composer<N>>,
 }
 
@@ -308,51 +223,46 @@ where
 {
     pub fn recompose(&mut self) {
         let mut c = self.composer.write();
-        let mut affected_scopes = Set::with_capacity(c.state_data.dirty_states.len());
-        for state_id in c.state_data.dirty_states.drain().collect::<Vec<_>>() {
-            if let Some(scopes) = c.state_data.subscribers.get(&state_id) {
-                affected_scopes.extend(scopes.iter().cloned());
+        c.dirty_scopes.clear();
+        for state_id in c.dirty_states.drain().collect::<Vec<_>>() {
+            if let Some(scopes) = c.subscribers.get(&state_id).cloned() {
+                c.dirty_scopes.extend(scopes);
             }
         }
-        c.dirty_scopes.clear();
-        c.dirty_scopes.extend(affected_scopes.iter().cloned());
-        drop(c);
-        for scope in affected_scopes {
-            if let Some(composable) = self.composables.get(&scope) {
-                composable.compose();
+        let mut composables = Vec::with_capacity(c.dirty_scopes.len());
+        for scope in &c.dirty_scopes {
+            if let Some(composable) = c.composables.get(scope) {
+                composables.push(composable.clone_box());
             }
+        }
+        drop(c);
+        for composable in composables {
+            composable.compose();
         }
         let mut c = self.composer.write();
-        let diff = c
+        let unmount_scopes = c
             .unmount_scopes
             .difference(&c.mount_scopes)
             .cloned()
             .collect::<Vec<_>>();
-        for s in &diff {
-            self.composables.remove(s);
-            c.composables.remove(s);
-            c.groups.remove(s);
-            if let Some(scope_states) = c.state_data.states.remove(s) {
+        for s in unmount_scopes {
+            c.composables.remove(&s);
+            c.groups.remove(&s);
+            if let Some(scope_states) = c.states.remove(&s) {
                 for state in scope_states.keys() {
-                    c.state_data.subscribers.remove(state);
+                    c.subscribers.remove(state);
                 }
             }
-            let use_states = c.state_data.uses.remove(s);
+            let use_states = c.uses.remove(&s);
             if let Some(use_states) = use_states {
                 for state in use_states {
-                    if let Some(subscribers) = c.state_data.subscribers.get_mut(&state) {
-                        subscribers.remove(s);
+                    if let Some(subscribers) = c.subscribers.get_mut(&state) {
+                        subscribers.remove(&s);
                     }
                 }
             }
         }
-        for s in c.mount_scopes.drain().collect::<Vec<_>>() {
-            if let Some(composable) = c.composables.get(&s) {
-                self.composables
-                    .entry(s)
-                    .or_insert_with(|| composable.clone_box());
-            }
-        }
+        c.mount_scopes.clear();
         c.unmount_scopes.clear();
     }
 }
@@ -364,7 +274,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Composer")
             .field("groups", &self.groups)
-            .field("states", &self.state_data.states)
+            .field("states", &self.states)
             .finish()
     }
 }
@@ -377,7 +287,7 @@ where
         let c = self.composer.read();
         f.debug_struct("Recomposer")
             .field("groups", &c.groups)
-            .field("states", &c.state_data.states)
+            .field("states", &c.states)
             .finish()
     }
 }

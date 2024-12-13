@@ -70,7 +70,7 @@ where
     {
         let scope_id = self.id;
         let mut c = self.composer.write();
-        let scope_states = c.state_data.states.entry(scope_id).or_default();
+        let scope_states = c.states.entry(scope_id).or_default();
         let id = StateId::new(scope_id);
         let _ = scope_states.entry(id).or_insert_with(|| Box::new(init()));
         State::new(id, self.composer)
@@ -82,13 +82,74 @@ where
     where
         C: Fn(Self) + 'static,
     {
-        let mut c = self.composer.write();
-        c.key_stack.push(key);
-        drop(c);
+        self.composer.write().key_stack.push(key);
         content(*self);
-        let mut c = self.composer.write();
-        c.key_stack.pop();
+        self.composer.write().key_stack.pop();
     }
+
+    // #[allow(dead_code)]
+    // pub(crate) fn create_scope<C, P, S>(&self, parent: Scope<P, N>, scope: Scope<S, N>, content: C)
+    // where
+    //     P: 'static,
+    //     S: 'static,
+    //     C: Fn(Scope<S, N>) + 'static,
+    // {
+    //     let composable = move || {
+    //         let parent = parent;
+    //         let mut scope = scope;
+    //         let mut c = parent.composer.write();
+    //         if let Some(key) = c.key_stack.borrow().last().cloned() {
+    //             scope.set_key(key);
+    //         }
+    //         let is_visited = c.is_visited(scope.id);
+    //         let is_dirty = c.is_dirty(scope.id);
+    //         if !is_dirty && is_visited {
+    //             c.skip_group();
+    //             return;
+    //         }
+    //         let parent_child_idx = c.start_group(scope.id);
+    //         {
+    //             let mut groups = c.groups.borrow_mut();
+    //             groups.entry(scope.id).or_insert_with(|| Group {
+    //                 node: None,
+    //                 parent: parent.id,
+    //                 children: Vec::new(),
+    //             });
+    //             if c.is_initialized.get() {
+    //                 if let Some(curr_child_idx) = parent_child_idx {
+    //                     let parent_grp = groups.get_mut(&parent.id).unwrap();
+    //                     if let Some(existing_child) =
+    //                         parent_grp.children.get(curr_child_idx).cloned()
+    //                     {
+    //                         if existing_child != scope.id {
+    //                             //println!("replace grp {:?} by {:?}", existing_child, scope.id);
+    //                             parent_grp.children[curr_child_idx] = scope.id;
+    //                             c.unmount_scopes.borrow_mut().insert(existing_child);
+    //                         }
+    //                     } else {
+    //                         //println!("new grp {:?}", scope.id);
+    //                         c.mount_scopes.borrow_mut().insert(scope.id);
+    //                         parent_grp.children.push(scope.id);
+    //                     }
+    //                 }
+    //             } else if let Some(parent_grp) = groups.get_mut(&parent.id) {
+    //                 parent_grp.children.push(scope.id);
+    //             }
+    //         }
+    //         drop(c);
+    //         content(scope);
+    //         let mut c = parent.composer.write();
+    //         if is_dirty {
+    //             c.clear_dirty(scope.id);
+    //         }
+    //         c.end_group(parent.id, scope.id);
+    //     };
+    //     composable();
+    //     let mut new_composables = self.composables.borrow_mut();
+    //     new_composables
+    //         .entry(scope.id)
+    //         .or_insert_with(|| Box::new(composable));
+    // }
 
     pub fn create_node<C, T, I, A, F, U>(
         &self,
@@ -177,39 +238,38 @@ where
             .or_insert_with(|| Box::new(composable));
     }
 
-    // pub fn create_any_node<C, T, I, A, E, F, U>(
-    //     &self,
-    //     scope: Scope<T, N>,
-    //     content: C,
-    //     input: I,
-    //     factory: F,
-    //     update: U,
-    // ) where
-    //     T: 'static,
-    //     C: Fn(Scope<T, N>) + 'static,
-    //     I: Fn() -> A + 'static,
-    //     A: 'static,
-    //     N: AnyNode<E>,
-    //     E: 'static,
-    //     F: Fn(A) -> E + 'static,
-    //     U: Fn(&mut E, A) + 'static,
-    // {
-    //     let c = self.composer.read();
-    //     c.create_node_scope(
-    //         *self,
-    //         scope,
-    //         content,
-    //         input,
-    //         move |args| {
-    //             let e = factory(args);
-    //             AnyNode::new(e)
-    //         },
-    //         move |n, args| {
-    //             let e = n.val_mut();
-    //             update(e, args);
-    //         },
-    //     );
-    // }
+    #[inline(always)]
+    pub fn create_any_node<C, T, I, A, E, F, U>(
+        &self,
+        scope: Scope<T, N>,
+        content: C,
+        input: I,
+        factory: F,
+        update: U,
+    ) where
+        T: 'static,
+        C: Fn(Scope<T, N>) + Clone + 'static,
+        I: Fn() -> A + Clone + 'static,
+        A: 'static,
+        N: AnyNode<E>,
+        E: 'static,
+        F: Fn(A) -> E + Clone + 'static,
+        U: Fn(&mut E, A) + Clone + 'static,
+    {
+        self.create_node(
+            scope,
+            content,
+            input,
+            move |args| {
+                let e = factory(args);
+                AnyNode::new(e)
+            },
+            move |n, args| {
+                let e = n.val_mut();
+                update(e, args);
+            },
+        );
+    }
 }
 
 pub trait AnyNode<T> {
