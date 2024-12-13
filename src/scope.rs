@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
-use crate::composer::Group;
+use crate::composer::Node;
 use crate::{offset_to_anchor, Composer, State, StateId};
 
 pub struct Scope<S, N> {
@@ -109,30 +109,30 @@ where
             if let Some(key) = c.key_stack.last().cloned() {
                 scope.set_key(key);
             }
-            let is_visited = c.groups.contains_key(&scope.id);
+            let is_visited = c.nodes.contains_key(&scope.id);
             let is_dirty = c.dirty_scopes.contains(&scope.id);
-            let is_initialized = c.is_initialized;
+            let is_initialized = c.initialized;
             if !is_dirty && is_visited {
-                c.skip_group();
+                c.skip_scope();
                 return;
             }
-            let parent_child_idx = c.start_group(scope.id);
+            let parent_child_idx = c.start_scope(scope.id);
             {
                 let input = input();
-                match c.groups.entry(scope.id) {
+                match c.nodes.entry(scope.id) {
                     Occupied(mut entry) => {
-                        let group = entry.get_mut();
-                        if let Some(node) = group.node.as_mut() {
-                            update(node, input);
+                        let node = entry.get_mut();
+                        if let Some(data) = node.data.as_mut() {
+                            update(data, input);
                         } else {
-                            let node = factory(input);
-                            group.node = Some(node);
+                            let data = factory(input);
+                            node.data = Some(data);
                         }
                     }
                     Vacant(entry) => {
-                        let node = factory(input);
-                        entry.insert(Group {
-                            node: Some(node),
+                        let data = factory(input);
+                        entry.insert(Node {
+                            data: Some(data),
                             parent: parent.id,
                             children: Vec::new(),
                         });
@@ -140,23 +140,21 @@ where
                 }
                 if is_initialized {
                     if let Some(curr_child_idx) = parent_child_idx {
-                        let parent_grp = c.groups.get_mut(&parent.id).unwrap();
+                        let parent_node = c.nodes.get_mut(&parent.id).unwrap();
                         if let Some(existing_child) =
-                            parent_grp.children.get(curr_child_idx).cloned()
+                            parent_node.children.get(curr_child_idx).cloned()
                         {
                             if existing_child != scope.id {
-                                //println!("replace grp {:?} by {:?}", existing_child, scope.id);
-                                parent_grp.children[curr_child_idx] = scope.id;
+                                parent_node.children[curr_child_idx] = scope.id;
                                 c.unmount_scopes.insert(existing_child);
                             }
                         } else {
-                            //println!("new grp {:?}", scope.id);
-                            parent_grp.children.push(scope.id);
+                            parent_node.children.push(scope.id);
                             c.mount_scopes.insert(scope.id);
                         }
                     }
-                } else if let Some(parent_grp) = c.groups.get_mut(&parent.id) {
-                    parent_grp.children.push(scope.id);
+                } else if let Some(parent_node) = c.nodes.get_mut(&parent.id) {
+                    parent_node.children.push(scope.id);
                 }
             }
             drop(c);
@@ -165,7 +163,7 @@ where
             if is_dirty {
                 c.dirty_scopes.remove(&scope.id);
             }
-            c.end_group(parent.id, scope.id);
+            c.end_scope(parent.id, scope.id);
         };
         composable();
         let mut c = self.composer.write();

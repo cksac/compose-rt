@@ -32,24 +32,24 @@ impl Clone for Box<dyn Composable> {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct Group<N> {
+pub struct Node<T> {
     pub(crate) parent: ScopeId,
     pub(crate) children: Vec<ScopeId>,
-    pub(crate) node: Option<N>,
+    pub(crate) data: Option<T>,
 }
 
 pub struct Composer<N> {
-    pub(crate) is_initialized: bool,
+    pub(crate) initialized: bool,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
-    pub(crate) groups: Map<ScopeId, Group<N>>,
+    pub(crate) nodes: Map<ScopeId, Node<N>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
     pub(crate) used_by: Map<StateId, Set<ScopeId>>,
     pub(crate) uses: Map<ScopeId, Set<StateId>>,
-    pub(crate) dirty_states: Set<StateId>,
-    pub(crate) key_stack: Vec<u32>,
     pub(crate) current_scope: ScopeId,
-    pub(crate) dirty_scopes: Set<ScopeId>,
+    pub(crate) key_stack: Vec<u32>,
     pub(crate) child_count_stack: Vec<usize>,
+    pub(crate) dirty_states: Set<StateId>,
+    pub(crate) dirty_scopes: Set<ScopeId>,
     pub(crate) mount_scopes: Set<ScopeId>,
     pub(crate) unmount_scopes: Set<ScopeId>,
 }
@@ -60,17 +60,17 @@ where
 {
     pub fn new() -> Self {
         Self {
-            is_initialized: false,
+            initialized: false,
             composables: Map::new(),
-            groups: Map::new(),
+            nodes: Map::new(),
             states: Map::new(),
             used_by: Map::new(),
             uses: Map::new(),
-            dirty_states: Set::new(),
             current_scope: ScopeId::new(),
             key_stack: Vec::new(),
-            dirty_scopes: Set::new(),
             child_count_stack: Vec::new(),
+            dirty_states: Set::new(),
+            dirty_scopes: Set::new(),
             mount_scopes: Set::new(),
             unmount_scopes: Set::new(),
         }
@@ -78,17 +78,17 @@ where
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            is_initialized: false,
+            initialized: false,
             composables: Map::with_capacity(capacity),
-            groups: Map::with_capacity(capacity),
+            nodes: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
-            dirty_states: Set::new(),
             current_scope: ScopeId::new(),
-            key_stack: Vec::new(),
-            dirty_scopes: Set::new(),
             child_count_stack: Vec::new(),
+            key_stack: Vec::new(),
+            dirty_states: Set::new(),
+            dirty_scopes: Set::new(),
             mount_scopes: Set::with_capacity(capacity),
             unmount_scopes: Set::new(),
         }
@@ -108,7 +108,7 @@ where
         root(scope);
         composer.write().end_root(scope.id);
         let mut c = composer.write();
-        c.is_initialized = true;
+        c.initialized = true;
         Recomposer { owner, composer }
     }
 
@@ -117,10 +117,10 @@ where
         let parent = ScopeId::new();
         self.current_scope = scope;
         self.child_count_stack.push(0);
-        self.groups.insert(
+        self.nodes.insert(
             scope,
-            Group {
-                node: None,
+            Node {
+                data: None,
                 parent,
                 children: Vec::new(),
             },
@@ -130,9 +130,9 @@ where
     #[inline(always)]
     pub(crate) fn end_root(&mut self, scope: ScopeId) {
         let child_count = self.child_count_stack.pop().unwrap();
-        let old_child_count = self.groups[&scope].children.len();
+        let old_child_count = self.nodes[&scope].children.len();
         if child_count < old_child_count {
-            self.groups
+            self.nodes
                 .get_mut(&scope)
                 .unwrap()
                 .children
@@ -141,7 +141,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_group(&mut self, scope: ScopeId) -> Option<usize> {
+    pub(crate) fn start_scope(&mut self, scope: ScopeId) -> Option<usize> {
         let parent_child_idx = self.child_count_stack.last().cloned();
         self.current_scope = scope;
         self.child_count_stack.push(0);
@@ -149,19 +149,19 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn end_group(&mut self, parent: ScopeId, scope: ScopeId) {
+    pub(crate) fn end_scope(&mut self, parent: ScopeId, scope: ScopeId) {
         let child_count = self.child_count_stack.pop().unwrap();
-        let old_child_count = self.groups[&scope].children.len();
+        let old_child_count = self.nodes[&scope].children.len();
         if child_count < old_child_count {
             let removed = self
-                .groups
+                .nodes
                 .get_mut(&scope)
                 .unwrap()
                 .children
                 .drain(child_count..)
                 .collect::<Vec<_>>();
             for child in removed {
-                self.groups.remove(&child);
+                self.nodes.remove(&child);
             }
         }
         if let Some(parent_child_count) = self.child_count_stack.last_mut() {
@@ -171,7 +171,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_group(&mut self) {
+    pub(crate) fn skip_scope(&mut self) {
         if let Some(parent_child_count) = self.child_count_stack.last_mut() {
             *parent_child_count += 1;
         }
@@ -214,7 +214,7 @@ where
             .collect::<Vec<_>>();
         for s in unmount_scopes {
             c.composables.remove(&s);
-            c.groups.remove(&s);
+            c.nodes.remove(&s);
             if let Some(scope_states) = c.states.remove(&s) {
                 for state in scope_states.keys() {
                     c.used_by.remove(state);
@@ -240,7 +240,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Composer")
-            .field("groups", &self.groups)
+            .field("nodes", &self.nodes)
             .field("states", &self.states)
             .finish()
     }
@@ -253,7 +253,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let c = self.composer.read();
         f.debug_struct("Recomposer")
-            .field("groups", &c.groups)
+            .field("nodes", &c.nodes)
             .field("states", &c.states)
             .finish()
     }
