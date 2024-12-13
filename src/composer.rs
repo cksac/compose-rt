@@ -58,7 +58,7 @@ pub struct Composer<N> {
 
 impl<N> Composer<N>
 where
-    N: Debug + 'static,
+    N: 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -190,7 +190,7 @@ pub struct Recomposer<N> {
 
 impl<N> Recomposer<N>
 where
-    N: Debug + 'static,
+    N: 'static,
 {
     pub fn recompose(&mut self) {
         let mut c = self.composer.write();

@@ -26,7 +26,7 @@ impl<S, N> Copy for Scope<S, N> {}
 impl<S, N> Scope<S, N>
 where
     S: 'static,
-    N: Debug + 'static,
+    N: 'static,
 {
     #[inline(always)]
     pub(crate) fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {

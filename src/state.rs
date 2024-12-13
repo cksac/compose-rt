@@ -14,7 +14,7 @@ pub struct State<T, N> {
 impl<T, N> State<T, N>
 where
     T: 'static,
-    N: Debug + 'static,
+    N: 'static,
 {
     #[inline(always)]
     pub(crate) fn new(id: StateId, composer: GenerationalBox<Composer<N>>) -> Self {
