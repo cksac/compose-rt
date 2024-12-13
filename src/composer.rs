@@ -40,6 +40,7 @@ pub struct Node<T> {
 
 pub struct Composer<N> {
     pub(crate) initialized: bool,
+    pub(crate) root_scope: ScopeId,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) nodes: Map<ScopeId, Node<N>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
@@ -61,6 +62,7 @@ where
     pub fn new() -> Self {
         Self {
             initialized: false,
+            root_scope: ScopeId::new(),
             composables: Map::new(),
             nodes: Map::new(),
             states: Map::new(),
@@ -79,6 +81,7 @@ where
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             initialized: false,
+            root_scope: ScopeId::new(),
             composables: Map::with_capacity(capacity),
             nodes: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
@@ -109,6 +112,7 @@ where
         composer.write().end_root(scope.id);
         let mut c = composer.write();
         c.initialized = true;
+        c.root_scope = scope.id;
         Recomposer { owner, composer }
     }
 
