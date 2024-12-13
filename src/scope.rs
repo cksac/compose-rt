@@ -222,6 +222,11 @@ where
 pub struct ScopeId(pub(crate) u64);
 
 impl ScopeId {
+    #[inline(always)]
+    pub fn with(id: u64) -> Self {
+        Self(id)
+    }
+
     #[track_caller]
     #[inline(always)]
     pub fn new() -> Self {
@@ -229,7 +234,6 @@ impl ScopeId {
         Self(id)
     }
 
-    #[track_caller]
     #[inline(always)]
     pub fn set_key(&mut self, key: u32) {
         self.0 = self.0 & 0xFFFF_FFFF_0000_0000 | key as u64;
