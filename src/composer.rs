@@ -214,6 +214,7 @@ where
             composable.compose();
         }
         let mut c = self.composer.write();
+        let c = c.deref_mut();
         let unmount_scopes = c
             .unmount_scopes
             .difference(&c.mount_scopes)
@@ -242,6 +243,22 @@ where
 
     pub fn root_scope(&self) -> ScopeId {
         self.composer.read().root_scope
+    }
+
+    pub fn with_context<F, T>(&mut self, func: F) -> T
+    where
+        F: FnOnce(&N::Context) -> T,
+    {
+        let c = self.composer.read();
+        func(&c.context)
+    }
+
+    pub fn with_context_mut<F, T>(&mut self, func: F) -> T
+    where
+        F: FnOnce(&mut N::Context) -> T,
+    {
+        let mut c = self.composer.write();
+        func(&mut c.context)
     }
 
     pub fn with_composer<F, T>(&mut self, func: F) -> T

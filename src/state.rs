@@ -1,5 +1,6 @@
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
+use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
 
@@ -33,6 +34,7 @@ where
         T: Clone,
     {
         let mut c = self.composer.write();
+        let c = c.deref_mut();
         let current_scope = c.current_scope;
         let used_by = c.used_by.entry(self.id).or_default();
         used_by.insert(current_scope);
@@ -46,6 +48,7 @@ where
 
     pub fn set(&self, value: T) {
         let mut c = self.composer.write();
+        let c = c.deref_mut();
         c.dirty_states.insert(self.id);
         let scope_states = c.states.entry(self.id.scope_id).or_default();
         let val = scope_states.get_mut(&self.id).unwrap();
