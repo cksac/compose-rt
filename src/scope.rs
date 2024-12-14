@@ -3,30 +3,38 @@ use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::fmt::{self, Debug, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
 
 use crate::composer::Node;
-use crate::{offset_to_anchor, Composer, State, StateId};
+use crate::map::Map;
+use crate::{offset_to_anchor, ComposeNode, Composer, State, StateId};
 
-pub struct Scope<S, N> {
+pub struct Scope<S, N>
+where
+    N: ComposeNode,
+{
     pub id: ScopeId,
     composer: GenerationalBox<Composer<N>>,
     ty: PhantomData<S>,
 }
 
-impl<S, N> Clone for Scope<S, N> {
+impl<S, N> Clone for Scope<S, N>
+where
+    N: ComposeNode,
+{
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<S, N> Copy for Scope<S, N> {}
+impl<S, N> Copy for Scope<S, N> where N: ComposeNode {}
 
 impl<S, N> Scope<S, N>
 where
     S: 'static,
-    N: 'static,
+    N: ComposeNode,
 {
     #[inline(always)]
     pub(crate) fn new(id: ScopeId, composer: GenerationalBox<Composer<N>>) -> Self {
@@ -86,69 +94,62 @@ where
     ) where
         T: 'static,
         C: Fn(Scope<T, N>) + Clone + 'static,
-        I: Fn() -> A + Clone + 'static,
+        I: Fn(&mut N::Context) -> A + Clone + 'static,
         A: 'static,
-        F: Fn(A) -> N + Clone + 'static,
-        U: Fn(&mut N, A) + Clone + 'static,
+        F: Fn(A, &mut N::Context) -> N + Clone + 'static,
+        U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
     {
         let parent = *self;
         let composable = move || {
             let mut scope = scope;
-            let mut c = parent.composer.write();
-            if let Some(key) = c.key_stack.last().copied() {
-                scope.set_key(key);
-            }
-            let is_visited = c.nodes.contains_key(&scope.id);
-            let is_dirty = c.dirty_scopes.contains(&scope.id);
-            let is_initialized = c.initialized;
-            if !is_dirty && is_visited {
-                c.skip_scope();
-                return;
-            }
-            let parent_child_idx = c.start_scope(scope.id);
-            {
-                let input = input();
-                match c.nodes.entry(scope.id) {
-                    Occupied(mut entry) => {
-                        let node = entry.get_mut();
-                        if let Some(data) = node.data.as_mut() {
-                            update(data, input);
-                        } else {
-                            let data = factory(input);
-                            node.data = Some(data);
-                        }
-                    }
-                    Vacant(entry) => {
-                        let data = factory(input);
-                        entry.insert(Node {
-                            data: Some(data),
-                            parent: parent.id,
-                            children: Vec::new(),
-                        });
-                    }
+            let is_dirty = {
+                let mut c = parent.composer.write();
+                let c = c.deref_mut();
+                if let Some(key) = c.key_stack.last().copied() {
+                    scope.set_key(key);
                 }
-                if is_initialized {
-                    if let Some(curr_child_idx) = parent_child_idx {
-                        let parent_node = c.nodes.get_mut(&parent.id).unwrap();
-                        if let Some(existing_child) =
-                            parent_node.children.get(curr_child_idx).cloned()
-                        {
-                            if existing_child != scope.id {
-                                parent_node.children[curr_child_idx] = scope.id;
-                                c.unmount_scopes.insert(existing_child);
+                let is_visited = c.nodes.contains_key(&scope.id);
+                let is_dirty = c.dirty_scopes.contains(&scope.id);
+                let is_initialized = c.initialized;
+                if !is_dirty && is_visited {
+                    c.skip_scope();
+                    return;
+                }
+                let parent_child_idx = c.start_scope(scope.id);
+                {
+                    update_node(
+                        scope.id,
+                        parent.id,
+                        &mut c.context,
+                        &mut c.nodes,
+                        &input,
+                        &factory,
+                        &update,
+                    );
+                    if is_initialized {
+                        if let Some(curr_child_idx) = parent_child_idx {
+                            let parent_node = c.nodes.get_mut(&parent.id).unwrap();
+                            if let Some(existing_child) =
+                                parent_node.children.get(curr_child_idx).cloned()
+                            {
+                                if existing_child != scope.id {
+                                    parent_node.children[curr_child_idx] = scope.id;
+                                    c.unmount_scopes.insert(existing_child);
+                                }
+                            } else {
+                                parent_node.children.push(scope.id);
+                                c.mount_scopes.insert(scope.id);
                             }
-                        } else {
-                            parent_node.children.push(scope.id);
-                            c.mount_scopes.insert(scope.id);
                         }
+                    } else if let Some(parent_node) = c.nodes.get_mut(&parent.id) {
+                        parent_node.children.push(scope.id);
                     }
-                } else if let Some(parent_node) = c.nodes.get_mut(&parent.id) {
-                    parent_node.children.push(scope.id);
-                }
-            }
-            drop(c);
+                };
+                is_dirty
+            };
             content(scope);
             let mut c = parent.composer.write();
+            let c = c.deref_mut();
             if is_dirty {
                 c.dirty_scopes.remove(&scope.id);
             }
@@ -172,26 +173,66 @@ where
     ) where
         T: 'static,
         C: Fn(Scope<T, N>) + Clone + 'static,
-        I: Fn() -> A + Clone + 'static,
+        I: Fn(&mut N::Context) -> A + Clone + 'static,
         A: 'static,
         N: AnyData<E>,
         E: 'static,
-        F: Fn(A) -> E + Clone + 'static,
-        U: Fn(&mut E, A) + Clone + 'static,
+        F: Fn(A, &mut N::Context) -> E + Clone + 'static,
+        U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
     {
         self.create_node(
             scope,
             content,
             input,
-            move |args| {
-                let e = factory(args);
+            move |args, ctx| {
+                let e = factory(args, ctx);
                 AnyData::new(e)
             },
-            move |n, args| {
+            move |n, args, ctx| {
                 let e = n.value_mut();
-                update(e, args);
+                update(e, args, ctx);
             },
         );
+    }
+}
+
+// workaround of borrowing both context and nodes from Composer
+// https://smallcultfollowing.com/babysteps/blog/2018/11/01/after-nll-interprocedural-conflicts/
+#[inline(always)]
+fn update_node<N, I, A, F, U>(
+    scope: ScopeId,
+    parent: ScopeId,
+    context: &mut N::Context,
+    nodes: &mut Map<ScopeId, Node<N>>,
+    input: &I,
+    factory: &F,
+    update: &U,
+) where
+    N: ComposeNode,
+    I: Fn(&mut N::Context) -> A + Clone + 'static,
+    A: 'static,
+    F: Fn(A, &mut N::Context) -> N + Clone + 'static,
+    U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
+{
+    let args = input(context);
+    match nodes.entry(scope) {
+        Occupied(mut entry) => {
+            let node = entry.get_mut();
+            if let Some(data) = node.data.as_mut() {
+                update(data, args, context);
+            } else {
+                let data = factory(args, context);
+                node.data = Some(data);
+            }
+        }
+        Vacant(entry) => {
+            let data = factory(args, context);
+            entry.insert(Node {
+                data: Some(data),
+                parent,
+                children: Vec::new(),
+            });
+        }
     }
 }
 

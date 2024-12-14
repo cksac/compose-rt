@@ -1,8 +1,22 @@
 use std::env;
 
-use compose_rt::{Composer, Root};
+use compose_rt::{ComposeNode, Composer, Root};
 
-type Scope<S> = compose_rt::Scope<S, String>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Node(String);
+
+impl Node {
+    fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+}
+
+impl ComposeNode for Node {
+    type Context = ();
+}
+
+type Scope<S> = compose_rt::Scope<S, Node>;
+
 pub struct Div;
 pub struct Button;
 
@@ -32,7 +46,13 @@ where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
         let scope = self.child::<Div>();
-        self.create_node(scope, content, || {}, |_| String::from("div"), |_, _| {});
+        self.create_node(
+            scope,
+            content,
+            |_| {},
+            |_, _| Node::new("div"),
+            |_, _, _| {},
+        );
     }
 
     #[track_caller]
@@ -44,9 +64,9 @@ where
         self.create_node(
             scope,
             |_| {},
-            move || text.clone().into(),
-            |text| format!("button({})", text),
-            |_, _| {},
+            move |_| text.clone().into(),
+            |text, _| Node::new(format!("button({})", text)),
+            |_, _, _| {},
         );
     }
 
@@ -59,9 +79,9 @@ where
         self.create_node(
             scope,
             |_| {},
-            move || text.clone().into(),
-            |text| format!("text({})", text),
-            |_, _| {},
+            move |_| text.clone().into(),
+            |text, _| Node::new(format!("text({})", text)),
+            |_, _, _| {},
         );
     }
 }
@@ -105,7 +125,7 @@ fn main() {
         .parse()
         .unwrap();
     let start = std::time::Instant::now();
-    let mut recomposer = Composer::compose(move |s| app(s, count));
+    let mut recomposer = Composer::compose(move |s| app(s, count), ());
     for _ in 0..iter {
         recomposer.recompose();
     }

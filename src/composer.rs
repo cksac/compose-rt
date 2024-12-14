@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
@@ -38,7 +38,15 @@ pub struct Node<T> {
     pub data: Option<T>,
 }
 
-pub struct Composer<N> {
+pub trait ComposeNode: 'static {
+    type Context;
+}
+
+pub struct Composer<N>
+where
+    N: ComposeNode,
+{
+    pub context: N::Context,
     pub root_scope: ScopeId,
     pub nodes: Map<ScopeId, Node<N>>,
     pub(crate) initialized: bool,
@@ -57,10 +65,11 @@ pub struct Composer<N> {
 
 impl<N> Composer<N>
 where
-    N: 'static,
+    N: ComposeNode,
 {
-    pub fn new() -> Self {
+    pub fn new(context: N::Context) -> Self {
         Self {
+            context,
             initialized: false,
             root_scope: ScopeId::new(),
             composables: Map::new(),
@@ -78,8 +87,9 @@ where
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(context: N::Context, capacity: usize) -> Self {
         Self {
+            context,
             initialized: false,
             root_scope: ScopeId::new(),
             composables: Map::with_capacity(capacity),
@@ -99,12 +109,12 @@ where
 
     // TODO: fine control over the capacity of the HashMaps
     #[track_caller]
-    pub fn compose<F>(root: F) -> Recomposer<N>
+    pub fn compose<F>(root: F, context: N::Context) -> Recomposer<N>
     where
         F: Fn(Scope<Root, N>),
     {
         let owner = UnsyncStorage::owner();
-        let composer = owner.insert(Composer::with_capacity(1024));
+        let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new();
         let scope = Scope::new(id, composer);
         composer.write().start_root(scope.id);
@@ -172,7 +182,10 @@ where
     }
 }
 
-pub struct Recomposer<N> {
+pub struct Recomposer<N>
+where
+    N: ComposeNode,
+{
     #[allow(dead_code)]
     owner: Owner,
     pub(crate) composer: GenerationalBox<Composer<N>>,
@@ -180,7 +193,7 @@ pub struct Recomposer<N> {
 
 impl<N> Recomposer<N>
 where
-    N: 'static,
+    N: ComposeNode,
 {
     pub fn recompose(&mut self) {
         let mut c = self.composer.write();
@@ -231,18 +244,26 @@ where
         self.composer.read().root_scope
     }
 
-    pub fn with_composer_mut<F>(&mut self, func: F)
+    pub fn with_composer<F, T>(&mut self, func: F) -> T
     where
-        F: FnOnce(&mut Composer<N>),
+        F: FnOnce(&Composer<N>) -> T,
+    {
+        let c = self.composer.read();
+        func(c.deref())
+    }
+
+    pub fn with_composer_mut<F, T>(&mut self, func: F) -> T
+    where
+        F: FnOnce(&mut Composer<N>) -> T,
     {
         let mut c = self.composer.write();
-        func(c.deref_mut());
+        func(c.deref_mut())
     }
 }
 
 impl<N> Debug for Composer<N>
 where
-    N: Debug,
+    N: ComposeNode + Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Composer")
@@ -254,7 +275,7 @@ where
 
 impl<N> Debug for Recomposer<N>
 where
-    N: 'static + Debug,
+    N: ComposeNode + Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let c = self.composer.read();

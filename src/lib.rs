@@ -4,7 +4,7 @@ mod loc;
 pub use loc::Loc;
 
 mod composer;
-pub use composer::{Composable, Composer, Recomposer};
+pub use composer::{Composable, ComposeNode, Composer, Recomposer};
 
 mod state;
 pub use state::{State, StateId};

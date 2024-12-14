@@ -1,9 +1,17 @@
 use std::hint::black_box;
 
-use compose_rt::{Composer, Root};
+use compose_rt::{ComposeNode, Composer, Root};
 use criterion::{criterion_group, criterion_main, Criterion};
 
-type Scope<S> = compose_rt::Scope<S, ()>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Node;
+
+impl ComposeNode for Node {
+    type Context = ();
+}
+
+type Scope<S> = compose_rt::Scope<S, Node>;
+
 pub struct Div;
 pub struct Button;
 
@@ -33,7 +41,7 @@ where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
         let scope = self.child::<Div>();
-        self.create_node(scope, content, || {}, |_| {}, |_, _| {});
+        self.create_node(scope, content, |_| {}, |_, _| Node, |_, _, _| {});
     }
 
     #[track_caller]
@@ -45,9 +53,9 @@ where
         self.create_node(
             scope,
             |_| {},
-            move || text.clone().into(),
-            |_| {},
-            |_, _| {},
+            move |_| text.clone().into(),
+            |_, _| Node,
+            |_, _, _| {},
         );
     }
 
@@ -60,9 +68,9 @@ where
         self.create_node(
             scope,
             |_| {},
-            move || text.clone().into(),
-            |_| {},
-            |_, _| {},
+            move |_| text.clone().into(),
+            |_, _| Node,
+            |_, _, _| {},
         );
     }
 }
@@ -90,7 +98,7 @@ fn app(s: Scope<Root>, n: usize) {
 }
 
 fn run_app(count: usize) {
-    let mut recomposer = Composer::compose(move |s: Scope<Root>| app(s, count));
+    let mut recomposer = Composer::compose(move |s: Scope<Root>| app(s, count), ());
     recomposer.recompose();
     recomposer.recompose();
 }

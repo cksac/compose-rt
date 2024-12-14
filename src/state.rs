@@ -3,9 +3,12 @@ use std::marker::PhantomData;
 
 use generational_box::GenerationalBox;
 
-use crate::{Composer, Loc, ScopeId};
+use crate::{ComposeNode, Composer, Loc, ScopeId};
 
-pub struct State<T, N> {
+pub struct State<T, N>
+where
+    N: ComposeNode,
+{
     pub id: StateId,
     composer: GenerationalBox<Composer<N>>,
     ty: PhantomData<T>,
@@ -14,7 +17,7 @@ pub struct State<T, N> {
 impl<T, N> State<T, N>
 where
     T: 'static,
-    N: 'static,
+    N: ComposeNode,
 {
     #[inline(always)]
     pub(crate) fn new(id: StateId, composer: GenerationalBox<Composer<N>>) -> Self {
@@ -50,7 +53,10 @@ where
     }
 }
 
-impl<T, N> Debug for State<T, N> {
+impl<T, N> Debug for State<T, N>
+where
+    N: ComposeNode,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
             .field("id", &self.id)
@@ -59,13 +65,16 @@ impl<T, N> Debug for State<T, N> {
     }
 }
 
-impl<T, N> Clone for State<T, N> {
+impl<T, N> Clone for State<T, N>
+where
+    N: ComposeNode,
+{
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T, N> Copy for State<T, N> {}
+impl<T, N> Copy for State<T, N> where N: ComposeNode {}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateId {
