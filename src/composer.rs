@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
-use crate::{Root, Scope, ScopeId, StateId};
+use crate::{utils, Root, Scope, ScopeId, StateId};
 
 pub trait Composable {
     fn compose(&self);
@@ -245,7 +245,7 @@ where
         self.composer.read().root_scope
     }
 
-    pub fn with_context<F, T>(&mut self, func: F) -> T
+    pub fn with_context<F, T>(&self, func: F) -> T
     where
         F: FnOnce(&N::Context) -> T,
     {
@@ -275,6 +275,22 @@ where
     {
         let mut c = self.composer.write();
         func(c.deref_mut())
+    }
+
+    #[inline(always)]
+    pub fn print_tree(&self)
+    where
+        N: Debug,
+    {
+        self.print_tree_with(self.root_scope(), |n| format!("{:?}", n));
+    }
+
+    pub fn print_tree_with<D>(&self, scope: ScopeId, display_fn: D)
+    where
+        D: Fn(Option<&N>) -> String,
+    {
+        let c = self.composer.read();
+        utils::print_tree(&c, scope, display_fn);
     }
 }
 

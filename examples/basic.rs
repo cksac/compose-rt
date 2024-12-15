@@ -130,7 +130,7 @@ fn main() {
         recomposer.recompose();
     }
     if print {
-        println!("{:#?}", recomposer);
+        recomposer.print_tree();
     }
     println!("Time: {:?}", start.elapsed());
 }

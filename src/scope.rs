@@ -56,7 +56,9 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::new();
+        let mut id = ScopeId::new();
+
+        id.set_key((self.id.0 >> 32) as u32);
         Scope::new(id, self.composer)
     }
 
@@ -277,7 +279,7 @@ impl ScopeId {
 
     #[inline(always)]
     pub fn set_key(&mut self, key: u32) {
-        self.0 = self.0 & 0xFFFF_FFFF_0000_0000 | key as u64;
+        self.0 = self.0 + key as u64;
     }
 }
 

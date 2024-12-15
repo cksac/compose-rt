@@ -12,6 +12,8 @@ pub use state::{State, StateId};
 mod scope;
 pub use scope::{AnyData, Root, Scope, ScopeId};
 
+pub mod utils;
+
 mod map;
 
 const ANCHOR: Loc = Loc::new();
