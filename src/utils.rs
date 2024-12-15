@@ -1,6 +1,3 @@
-use std::fmt::Debug;
-
-use crate::composer::Node;
 use crate::{ComposeNode, Composer, ScopeId};
 
 pub fn print_tree<N, D>(composer: &Composer<N>, root: ScopeId, display_fn: D)
