@@ -27,13 +27,13 @@ fn print_node<N, D>(
     } else {
         "└── "
     };
-    let key: u64 = (*scope).into();
+    let id = scope.id;
     println!(
-        "{lines}{fork} {key:<20}: {display}",
+        "{lines}{fork} {id:<20}: {display}",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),
-        key = key,
+        id = id,
     );
     let bar = if has_sibling { "│   " } else { "    " };
     let new_string = lines_string + bar;

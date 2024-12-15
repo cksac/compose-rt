@@ -56,9 +56,7 @@ where
     where
         C: 'static,
     {
-        let mut id = ScopeId::new();
-
-        id.set_key((self.id.0 >> 32) as u32);
+        let mut id = ScopeId::new(self.id.id);
         Scope::new(id, self.composer)
     }
 
@@ -262,42 +260,45 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScopeId(pub(crate) u64);
+pub struct ScopeId {
+    pub(crate) parent: u64,
+    pub(crate) id: u64,
+}
 
 impl ScopeId {
     #[inline(always)]
-    pub fn with(id: u64) -> Self {
-        Self(id)
+    pub fn with(parent: u64, id: u64) -> Self {
+        Self { parent, id }
     }
 
     #[track_caller]
     #[inline(always)]
-    pub fn new() -> Self {
+    pub fn new(parent: u64) -> Self {
         let id = (offset_to_anchor() as u64) << 32;
-        Self(id)
+        Self { parent, id }
     }
 
     #[inline(always)]
     pub fn set_key(&mut self, key: u32) {
-        self.0 = self.0 + key as u64;
+        self.id = self.id + key as u64;
     }
 }
 
-impl From<u64> for ScopeId {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
+// impl From<u64> for ScopeId {
+//     fn from(id: u64) -> Self {
+//         Self(id)
+//     }
+// }
 
-impl From<ScopeId> for u64 {
-    fn from(id: ScopeId) -> Self {
-        id.0
-    }
-}
+// impl From<ScopeId> for u64 {
+//     fn from(id: ScopeId) -> Self {
+//         id.0
+//     }
+// }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ScopeId({})", self.0)
+        write!(f, "ScopeId({}, {})", self.parent, self.id)
     }
 }
 

@@ -98,6 +98,6 @@ impl StateId {
 
 impl Debug for StateId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "StateId({:?},{:?})", self.scope_id.0, self.loc)
+        write!(f, "StateId({:?},{:?})", self.scope_id, self.loc)
     }
 }

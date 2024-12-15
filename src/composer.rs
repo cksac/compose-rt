@@ -71,13 +71,13 @@ where
         Self {
             context,
             initialized: false,
-            root_scope: ScopeId::new(),
+            root_scope: ScopeId::new(0),
             composables: Map::new(),
             nodes: Map::new(),
             states: Map::new(),
             used_by: Map::new(),
             uses: Map::new(),
-            current_scope: ScopeId::new(),
+            current_scope: ScopeId::new(0),
             key_stack: Vec::new(),
             child_count_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -91,13 +91,13 @@ where
         Self {
             context,
             initialized: false,
-            root_scope: ScopeId::new(),
+            root_scope: ScopeId::new(0),
             composables: Map::with_capacity(capacity),
             nodes: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
-            current_scope: ScopeId::new(),
+            current_scope: ScopeId::new(0),
             child_count_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -115,7 +115,7 @@ where
     {
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(context, 1024));
-        let id = ScopeId::new();
+        let id = ScopeId::new(0);
         let scope = Scope::new(id, composer);
         composer.write().start_root(scope.id);
         root(scope);
@@ -127,7 +127,7 @@ where
 
     #[inline(always)]
     pub(crate) fn start_root(&mut self, scope: ScopeId) {
-        let parent = ScopeId::new();
+        let parent = ScopeId::new(0);
         self.current_scope = scope;
         self.child_count_stack.push(0);
         self.nodes.insert(
