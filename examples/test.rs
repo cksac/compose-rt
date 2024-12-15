@@ -87,8 +87,14 @@ fn component(s: Scope<Container>) {
 
 fn app(s: Scope<Root>) {
     s.container(move |s| {
-        component(s);
-        component(s);
+        for i in 0..2 {
+            s.key(i, |s| {
+                s.container(move |s| {
+                    component(s);
+                    component(s);
+                });
+            });
+        }
     });
 }
 
