@@ -10,7 +10,6 @@ where
     print_node(composer, node_key, &display_fn, false, String::new());
 }
 
-/// Recursive function that prints each node in the tree
 fn print_node<N, D>(
     composer: &Composer<N>,
     node_key: NodeKey,
@@ -30,7 +29,7 @@ fn print_node<N, D>(
     };
     let scope_id = node.scope.child;
     println!(
-        "{lines}{fork} {display} [{scope_id:0>20} {node_key:?}]",
+        "{lines}{fork} {display} [{scope_id:0>20} @ {node_key:?}]",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),

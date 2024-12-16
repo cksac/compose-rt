@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
-use slotmap::{new_key_type, KeyData, SlotMap};
+use slab::Slab;
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
 use crate::{utils, Root, Scope, ScopeId, StateId};
@@ -44,37 +44,14 @@ pub trait ComposeNode: 'static {
     type Context;
 }
 
-new_key_type! {
-    pub struct NodeKey;
-}
-
-impl NodeKey {
-    #[inline(always)]
-    pub fn new(val: u64) -> Self {
-        val.into()
-    }
-}
-
-impl From<u64> for NodeKey {
-    #[inline(always)]
-    fn from(val: u64) -> Self {
-        NodeKey::from(KeyData::from_ffi(val))
-    }
-}
-
-impl From<NodeKey> for u64 {
-    #[inline(always)]
-    fn from(key: NodeKey) -> Self {
-        key.0.as_ffi()
-    }
-}
+pub type NodeKey = usize;
 
 pub struct Composer<N>
 where
     N: ComposeNode,
 {
     pub context: N::Context,
-    pub nodes: SlotMap<NodeKey, Node<N>>,
+    pub nodes: Slab<Node<N>>,
     pub scopes: Map<ScopeId, NodeKey>,
     pub(crate) initialized: bool,
     pub(crate) root_node_key: NodeKey,
@@ -98,15 +75,15 @@ where
     pub fn new(context: N::Context) -> Self {
         Self {
             context,
-            nodes: SlotMap::with_key(),
+            nodes: Slab::new(),
             scopes: Map::new(),
             initialized: false,
-            root_node_key: NodeKey::new(0),
+            root_node_key: 0,
             composables: Map::new(),
             states: Map::new(),
             used_by: Map::new(),
             uses: Map::new(),
-            current_node_key: NodeKey::new(0),
+            current_node_key: 0,
             key_stack: Vec::new(),
             child_count_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -119,15 +96,15 @@ where
     pub fn with_capacity(context: N::Context, capacity: usize) -> Self {
         Self {
             context,
-            nodes: SlotMap::with_capacity_and_key(capacity),
+            nodes: Slab::with_capacity(capacity),
             scopes: Map::with_capacity(capacity),
             initialized: false,
-            root_node_key: NodeKey::new(0),
+            root_node_key: 0,
             composables: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
-            current_node_key: NodeKey::new(0),
+            current_node_key: 0,
             child_count_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -157,7 +134,7 @@ where
 
     #[inline(always)]
     pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
-        let parent_node_key = NodeKey::new(0);
+        let parent_node_key = 0;
         self.child_count_stack.push(0);
         let node_key = self.nodes.insert(Node {
             scope: scope_id,
@@ -257,20 +234,19 @@ where
             .cloned()
             .collect::<Vec<_>>();
         for n in unmount_nodes {
-            if let Some(s) = c.nodes.remove(n).map(|n| n.scope) {
-                c.scopes.remove(&s);
-                c.composables.remove(&s);
-                if let Some(scope_states) = c.states.remove(&s) {
-                    for state in scope_states.keys() {
-                        c.used_by.remove(state);
-                    }
+            let s = c.nodes.remove(n).scope;
+            c.scopes.remove(&s);
+            c.composables.remove(&s);
+            if let Some(scope_states) = c.states.remove(&s) {
+                for state in scope_states.keys() {
+                    c.used_by.remove(state);
                 }
-                let use_states = c.uses.remove(&s);
-                if let Some(use_states) = use_states {
-                    for state in use_states {
-                        if let Some(used_by) = c.used_by.get_mut(&state) {
-                            used_by.remove(&s);
-                        }
+            }
+            let use_states = c.uses.remove(&s);
+            if let Some(use_states) = use_states {
+                for state in use_states {
+                    if let Some(used_by) = c.used_by.get_mut(&state) {
+                        used_by.remove(&s);
                     }
                 }
             }

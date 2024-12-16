@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
-use slotmap::SlotMap;
+use slab::Slab;
 
 use crate::composer::{Node, NodeKey};
 use crate::{offset_to_anchor, ComposeNode, Composer, State, StateId};
@@ -204,7 +204,7 @@ where
 fn update_node<N, I, A, F, U>(
     node_key: NodeKey,
     context: &mut N::Context,
-    nodes: &mut SlotMap<NodeKey, Node<N>>,
+    nodes: &mut Slab<Node<N>>,
     input: &I,
     factory: &F,
     update: &U,
