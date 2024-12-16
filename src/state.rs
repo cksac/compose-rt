@@ -35,7 +35,8 @@ where
     {
         let mut c = self.composer.write();
         let c = c.deref_mut();
-        let current_scope = c.current_scope;
+        let current_node = c.current_node;
+        let current_scope = c.nodes[current_node].scope;
         let used_by = c.used_by.entry(self.id).or_default();
         used_by.insert(current_scope);
         let uses = c.uses.entry(current_scope).or_default();

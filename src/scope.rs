@@ -6,8 +6,9 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
+use slotmap::SlotMap;
 
-use crate::composer::Node;
+use crate::composer::{Node, NodeKey};
 use crate::map::Map;
 use crate::{offset_to_anchor, ComposeNode, Composer, State, StateId};
 
@@ -102,24 +103,26 @@ where
         let parent = *self;
         let composable = move || {
             let mut scope = scope;
-            let is_dirty = {
+            let (is_dirty, node_key) = {
                 let mut c = parent.composer.write();
                 let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
                     scope.set_key(key);
                 }
-                let is_visited = c.nodes.contains_key(&scope.id);
+                let is_visited = c.scopes.contains_key(&scope.id);
                 let is_dirty = c.dirty_scopes.contains(&scope.id);
                 let is_initialized = c.initialized;
+
                 if !is_dirty && is_visited {
                     c.skip_scope();
                     return;
                 }
                 let parent_child_idx = c.start_scope(scope.id);
+                let node_key = c.scopes.get(&scope.id).cloned().unwrap();
+                let parent_key = c.scopes.get(&parent.id).cloned().unwrap();
                 {
                     update_node(
-                        scope.id,
-                        parent.id,
+                        node_key,
                         &mut c.context,
                         &mut c.nodes,
                         &input,
@@ -128,24 +131,24 @@ where
                     );
                     if is_initialized {
                         if let Some(curr_child_idx) = parent_child_idx {
-                            let parent_node = c.nodes.get_mut(&parent.id).unwrap();
+                            let parent_node = c.nodes.get_mut(parent_key).unwrap();
                             if let Some(existing_child) =
                                 parent_node.children.get(curr_child_idx).cloned()
                             {
-                                if existing_child != scope.id {
-                                    parent_node.children[curr_child_idx] = scope.id;
+                                if existing_child != node_key {
+                                    parent_node.children[curr_child_idx] = node_key;
                                     c.unmount_scopes.insert(existing_child);
                                 }
                             } else {
-                                parent_node.children.push(scope.id);
-                                c.mount_scopes.insert(scope.id);
+                                parent_node.children.push(node_key);
+                                c.mount_scopes.insert(node_key);
                             }
                         }
-                    } else if let Some(parent_node) = c.nodes.get_mut(&parent.id) {
-                        parent_node.children.push(scope.id);
+                    } else if let Some(parent_node) = c.nodes.get_mut(parent_key) {
+                        parent_node.children.push(node_key);
                     }
                 };
-                is_dirty
+                (is_dirty, node_key)
             };
             content(scope);
             let mut c = parent.composer.write();
@@ -200,10 +203,9 @@ where
 // https://smallcultfollowing.com/babysteps/blog/2018/11/01/after-nll-interprocedural-conflicts/
 #[inline(always)]
 fn update_node<N, I, A, F, U>(
-    scope: ScopeId,
-    parent: ScopeId,
+    node_key: NodeKey,
     context: &mut N::Context,
-    nodes: &mut Map<ScopeId, Node<N>>,
+    nodes: &mut SlotMap<NodeKey, Node<N>>,
     input: &I,
     factory: &F,
     update: &U,
@@ -215,24 +217,12 @@ fn update_node<N, I, A, F, U>(
     U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
 {
     let args = input(context);
-    match nodes.entry(scope) {
-        Occupied(mut entry) => {
-            let node = entry.get_mut();
-            if let Some(data) = node.data.as_mut() {
-                update(data, args, context);
-            } else {
-                let data = factory(args, context);
-                node.data = Some(data);
-            }
-        }
-        Vacant(entry) => {
-            let data = factory(args, context);
-            entry.insert(Node {
-                data: Some(data),
-                parent,
-                children: Vec::new(),
-            });
-        }
+    let node = nodes.get_mut(node_key).unwrap();
+    if let Some(data) = node.data.as_mut() {
+        update(data, args, context);
+    } else {
+        let data = factory(args, context);
+        node.data = Some(data);
     }
 }
 

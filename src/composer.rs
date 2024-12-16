@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 
 use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
+use slotmap::{new_key_type, KeyData, SlotMap};
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
 use crate::{utils, Root, Scope, ScopeId, StateId};
@@ -33,8 +34,9 @@ impl Clone for Box<dyn Composable> {
 
 #[derive(Debug)]
 pub struct Node<T> {
-    pub parent: ScopeId,
-    pub children: Vec<ScopeId>,
+    pub scope: ScopeId,
+    pub parent: NodeKey,
+    pub children: Vec<NodeKey>,
     pub data: Option<T>,
 }
 
@@ -42,25 +44,36 @@ pub trait ComposeNode: 'static {
     type Context;
 }
 
+new_key_type! {
+    pub struct NodeKey;
+}
+
+impl NodeKey {
+    pub fn new(val: u64) -> Self {
+        NodeKey::from(KeyData::from_ffi(val))
+    }
+}
+
 pub struct Composer<N>
 where
     N: ComposeNode,
 {
     pub context: N::Context,
-    pub root_scope: ScopeId,
-    pub nodes: Map<ScopeId, Node<N>>,
+    pub root_node: NodeKey,
+    pub nodes: SlotMap<NodeKey, Node<N>>,
+    pub scopes: Map<ScopeId, NodeKey>,
     pub(crate) initialized: bool,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
     pub(crate) used_by: Map<StateId, Set<ScopeId>>,
     pub(crate) uses: Map<ScopeId, Set<StateId>>,
-    pub(crate) current_scope: ScopeId,
+    pub(crate) current_node: NodeKey,
     pub(crate) key_stack: Vec<u32>,
     pub(crate) child_count_stack: Vec<usize>,
     pub(crate) dirty_states: Set<StateId>,
     pub(crate) dirty_scopes: Set<ScopeId>,
-    pub(crate) mount_scopes: Set<ScopeId>,
-    pub(crate) unmount_scopes: Set<ScopeId>,
+    pub(crate) mount_scopes: Set<NodeKey>,
+    pub(crate) unmount_scopes: Set<NodeKey>,
 }
 
 impl<N> Composer<N>
@@ -71,13 +84,14 @@ where
         Self {
             context,
             initialized: false,
-            root_scope: ScopeId::new(0),
+            root_node: NodeKey::new(0),
             composables: Map::new(),
-            nodes: Map::new(),
+            nodes: SlotMap::with_key(),
+            scopes: Map::new(),
             states: Map::new(),
             used_by: Map::new(),
             uses: Map::new(),
-            current_scope: ScopeId::new(0),
+            current_node: NodeKey::new(0),
             key_stack: Vec::new(),
             child_count_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -91,13 +105,14 @@ where
         Self {
             context,
             initialized: false,
-            root_scope: ScopeId::new(0),
+            root_node: NodeKey::new(0),
             composables: Map::with_capacity(capacity),
-            nodes: Map::with_capacity(capacity),
+            nodes: SlotMap::with_capacity_and_key(capacity),
+            scopes: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
-            current_scope: ScopeId::new(0),
+            current_node: NodeKey::new(0),
             child_count_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -127,42 +142,54 @@ where
 
     #[inline(always)]
     pub(crate) fn start_root(&mut self, scope: ScopeId) {
-        let parent = ScopeId::new(0);
-        self.current_scope = scope;
+        let parent = NodeKey::new(0);
         self.child_count_stack.push(0);
-        self.nodes.insert(
+        let node_key = self.nodes.insert(Node {
             scope,
-            Node {
-                data: None,
-                parent,
-                children: Vec::new(),
-            },
-        );
+            data: None,
+            parent,
+            children: Vec::new(),
+        });
+        self.scopes.insert(scope, node_key);
+        self.current_node = node_key;
     }
 
     #[inline(always)]
     pub(crate) fn end_root(&mut self, scope: ScopeId) {
         let child_count = self.child_count_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
-        self.root_scope = self.nodes[&scope].children[0];
+        let node_key = self.scopes[&scope];
+        self.root_node = self.nodes[node_key].children[0];
     }
 
     #[inline(always)]
     pub(crate) fn start_scope(&mut self, scope: ScopeId) -> Option<usize> {
         let parent_child_idx = self.child_count_stack.last().cloned();
-        self.current_scope = scope;
+        let current_node = self.scopes.entry(scope).or_insert_with(|| {
+            let parent = self.current_node;
+            let node_key = self.nodes.insert(Node {
+                scope,
+                data: None,
+                parent,
+                children: Vec::new(),
+            });
+            node_key
+        });
+        self.current_node = *current_node;
         self.child_count_stack.push(0);
         parent_child_idx
     }
 
     #[inline(always)]
     pub(crate) fn end_scope(&mut self, parent: ScopeId, scope: ScopeId) {
+        let parent = self.scopes[&parent];
+        let scope = self.scopes[&scope];
         let child_count = self.child_count_stack.pop().unwrap();
-        let old_child_count = self.nodes[&scope].children.len();
+        let old_child_count = self.nodes[scope].children.len();
         if child_count < old_child_count {
             let unmount_scopes = self
                 .nodes
-                .get_mut(&scope)
+                .get_mut(scope)
                 .unwrap()
                 .children
                 .drain(child_count..);
@@ -171,7 +198,7 @@ where
         if let Some(parent_child_count) = self.child_count_stack.last_mut() {
             *parent_child_count += 1;
         }
-        self.current_scope = parent;
+        self.current_node = parent;
     }
 
     #[inline(always)]
@@ -221,18 +248,19 @@ where
             .cloned()
             .collect::<Vec<_>>();
         for s in unmount_scopes {
-            c.composables.remove(&s);
-            c.nodes.remove(&s);
-            if let Some(scope_states) = c.states.remove(&s) {
-                for state in scope_states.keys() {
-                    c.used_by.remove(state);
+            if let Some(s) = c.nodes.remove(s).map(|n| n.scope) {
+                c.composables.remove(&s);
+                if let Some(scope_states) = c.states.remove(&s) {
+                    for state in scope_states.keys() {
+                        c.used_by.remove(state);
+                    }
                 }
-            }
-            let use_states = c.uses.remove(&s);
-            if let Some(use_states) = use_states {
-                for state in use_states {
-                    if let Some(used_by) = c.used_by.get_mut(&state) {
-                        used_by.remove(&s);
+                let use_states = c.uses.remove(&s);
+                if let Some(use_states) = use_states {
+                    for state in use_states {
+                        if let Some(used_by) = c.used_by.get_mut(&state) {
+                            used_by.remove(&s);
+                        }
                     }
                 }
             }
@@ -241,8 +269,8 @@ where
         c.unmount_scopes.clear();
     }
 
-    pub fn root_scope(&self) -> ScopeId {
-        self.composer.read().root_scope
+    pub fn root_node(&self) -> NodeKey {
+        self.composer.read().root_node
     }
 
     pub fn with_context<F, T>(&self, func: F) -> T
@@ -282,15 +310,15 @@ where
     where
         N: Debug,
     {
-        self.print_tree_with(self.root_scope(), |n| format!("{:?}", n));
+        self.print_tree_with(self.root_node(), |n| format!("{:?}", n));
     }
 
-    pub fn print_tree_with<D>(&self, scope: ScopeId, display_fn: D)
+    pub fn print_tree_with<D>(&self, node: NodeKey, display_fn: D)
     where
         D: Fn(Option<&N>) -> String,
     {
         let c = self.composer.read();
-        utils::print_tree(&c, scope, display_fn);
+        utils::print_tree(&c, node, display_fn);
     }
 }
 
