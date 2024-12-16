@@ -1,5 +1,5 @@
 use crate::composer::NodeKey;
-use crate::{ComposeNode, Composer, ScopeId};
+use crate::{ComposeNode, Composer};
 
 pub fn print_tree<N, D>(composer: &Composer<N>, root: NodeKey, display_fn: D)
 where

@@ -179,13 +179,12 @@ where
         let parent_child_idx = self.child_count_stack.last().cloned();
         let current_node = self.scopes.entry(scope).or_insert_with(|| {
             let parent = self.current_node;
-            let node_key = self.nodes.insert(Node {
+            self.nodes.insert(Node {
                 scope,
                 data: None,
                 parent,
                 children: Vec::new(),
-            });
-            node_key
+            })
         });
         self.current_node = *current_node;
         self.child_count_stack.push(0);

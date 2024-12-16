@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::fmt::{self, Debug, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -9,7 +8,6 @@ use generational_box::GenerationalBox;
 use slotmap::SlotMap;
 
 use crate::composer::{Node, NodeKey};
-use crate::map::Map;
 use crate::{offset_to_anchor, ComposeNode, Composer, State, StateId};
 
 pub struct Scope<S, N>
@@ -103,7 +101,7 @@ where
         let parent = *self;
         let composable = move || {
             let mut scope = scope;
-            let (is_dirty, node_key) = {
+            let is_dirty = {
                 let mut c = parent.composer.write();
                 let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
@@ -148,7 +146,7 @@ where
                         parent_node.children.push(node_key);
                     }
                 };
-                (is_dirty, node_key)
+                is_dirty
             };
             content(scope);
             let mut c = parent.composer.write();
