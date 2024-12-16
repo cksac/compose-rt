@@ -62,7 +62,7 @@ impl From<u64> for NodeKey {
 
 impl From<NodeKey> for u64 {
     fn from(key: NodeKey) -> Self {
-        key.into()
+        key.0.as_ffi()
     }
 }
 
