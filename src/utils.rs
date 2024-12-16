@@ -1,13 +1,13 @@
 use crate::composer::NodeKey;
 use crate::{ComposeNode, Composer};
 
-pub fn print_tree<N, D>(composer: &Composer<N>, root: NodeKey, display_fn: D)
+pub fn print_tree<N, D>(composer: &Composer<N>, node_key: NodeKey, display_fn: D)
 where
     N: ComposeNode,
     D: Fn(Option<&N>) -> String,
 {
     println!("Root");
-    print_node(composer, root, &display_fn, false, String::new());
+    print_node(composer, node_key, &display_fn, false, String::new());
 }
 
 /// Recursive function that prints each node in the tree
@@ -28,13 +28,13 @@ fn print_node<N, D>(
     } else {
         "└── "
     };
-    let id = node.scope.id;
+    let scope_id = node.scope.child;
     println!(
-        "{lines}{fork} {id:0>20} {node_key:?}: {display}",
+        "{lines}{fork} {display} [{scope_id:0>20} {node_key:?}]",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),
-        id = id,
+        scope_id = scope_id,
         node_key = node_key,
     );
     let bar = if has_sibling { "│   " } else { "    " };

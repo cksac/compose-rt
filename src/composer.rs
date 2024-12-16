@@ -49,18 +49,21 @@ new_key_type! {
 }
 
 impl NodeKey {
+    #[inline(always)]
     pub fn new(val: u64) -> Self {
-        NodeKey::from(KeyData::from_ffi(val))
+        val.into()
     }
 }
 
 impl From<u64> for NodeKey {
+    #[inline(always)]
     fn from(val: u64) -> Self {
-        NodeKey::new(val)
+        NodeKey::from(KeyData::from_ffi(val))
     }
 }
 
 impl From<NodeKey> for u64 {
+    #[inline(always)]
     fn from(key: NodeKey) -> Self {
         key.0.as_ffi()
     }
@@ -71,21 +74,21 @@ where
     N: ComposeNode,
 {
     pub context: N::Context,
-    pub root_node: NodeKey,
     pub nodes: SlotMap<NodeKey, Node<N>>,
     pub scopes: Map<ScopeId, NodeKey>,
     pub(crate) initialized: bool,
+    pub(crate) root_node_key: NodeKey,
     pub(crate) composables: Map<ScopeId, Box<dyn Composable>>,
     pub(crate) states: Map<ScopeId, Map<StateId, Box<dyn Any>>>,
     pub(crate) used_by: Map<StateId, Set<ScopeId>>,
     pub(crate) uses: Map<ScopeId, Set<StateId>>,
-    pub(crate) current_node: NodeKey,
+    pub(crate) current_node_key: NodeKey,
     pub(crate) key_stack: Vec<u32>,
     pub(crate) child_count_stack: Vec<usize>,
     pub(crate) dirty_states: Set<StateId>,
     pub(crate) dirty_scopes: Set<ScopeId>,
-    pub(crate) mount_scopes: Set<NodeKey>,
-    pub(crate) unmount_scopes: Set<NodeKey>,
+    pub(crate) mount_nodes: Set<NodeKey>,
+    pub(crate) unmount_nodes: Set<NodeKey>,
 }
 
 impl<N> Composer<N>
@@ -95,42 +98,42 @@ where
     pub fn new(context: N::Context) -> Self {
         Self {
             context,
-            initialized: false,
-            root_node: NodeKey::new(0),
-            composables: Map::new(),
             nodes: SlotMap::with_key(),
             scopes: Map::new(),
+            initialized: false,
+            root_node_key: NodeKey::new(0),
+            composables: Map::new(),
             states: Map::new(),
             used_by: Map::new(),
             uses: Map::new(),
-            current_node: NodeKey::new(0),
+            current_node_key: NodeKey::new(0),
             key_stack: Vec::new(),
             child_count_stack: Vec::new(),
             dirty_states: Set::new(),
             dirty_scopes: Set::new(),
-            mount_scopes: Set::new(),
-            unmount_scopes: Set::new(),
+            mount_nodes: Set::new(),
+            unmount_nodes: Set::new(),
         }
     }
 
     pub fn with_capacity(context: N::Context, capacity: usize) -> Self {
         Self {
             context,
-            initialized: false,
-            root_node: NodeKey::new(0),
-            composables: Map::with_capacity(capacity),
             nodes: SlotMap::with_capacity_and_key(capacity),
             scopes: Map::with_capacity(capacity),
+            initialized: false,
+            root_node_key: NodeKey::new(0),
+            composables: Map::with_capacity(capacity),
             states: Map::with_capacity(capacity),
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
-            current_node: NodeKey::new(0),
+            current_node_key: NodeKey::new(0),
             child_count_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
             dirty_scopes: Set::new(),
-            mount_scopes: Set::with_capacity(capacity),
-            unmount_scopes: Set::new(),
+            mount_nodes: Set::with_capacity(capacity),
+            unmount_nodes: Set::new(),
         }
     }
 
@@ -153,63 +156,58 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_root(&mut self, scope: ScopeId) {
-        let parent = NodeKey::new(0);
+    pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
+        let parent_node_key = NodeKey::new(0);
         self.child_count_stack.push(0);
         let node_key = self.nodes.insert(Node {
-            scope,
+            scope: scope_id,
             data: None,
-            parent,
+            parent: parent_node_key,
             children: Vec::new(),
         });
-        self.scopes.insert(scope, node_key);
-        self.current_node = node_key;
+        self.scopes.insert(scope_id, node_key);
+        self.current_node_key = node_key;
     }
 
     #[inline(always)]
-    pub(crate) fn end_root(&mut self, scope: ScopeId) {
+    pub(crate) fn end_root(&mut self, scope_id: ScopeId) {
         let child_count = self.child_count_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
-        let node_key = self.scopes[&scope];
-        self.root_node = self.nodes[node_key].children[0];
+        let node_key = self.scopes[&scope_id];
+        self.root_node_key = self.nodes[node_key].children[0];
     }
 
     #[inline(always)]
-    pub(crate) fn start_scope(&mut self, scope: ScopeId) -> Option<usize> {
-        let parent_child_idx = self.child_count_stack.last().cloned();
-        let current_node = self.scopes.entry(scope).or_insert_with(|| {
-            let parent = self.current_node;
+    pub(crate) fn start_scope(&mut self, parent_node_key: NodeKey, current_scope_id: ScopeId) {
+        let current_node_key = self.scopes.entry(current_scope_id).or_insert_with(|| {
             self.nodes.insert(Node {
-                scope,
+                scope: current_scope_id,
                 data: None,
-                parent,
+                parent: parent_node_key,
                 children: Vec::new(),
             })
         });
-        self.current_node = *current_node;
+        self.current_node_key = *current_node_key;
         self.child_count_stack.push(0);
-        parent_child_idx
     }
 
     #[inline(always)]
-    pub(crate) fn end_scope(&mut self, parent: ScopeId, scope: ScopeId) {
-        let parent = self.scopes[&parent];
-        let scope = self.scopes[&scope];
+    pub(crate) fn end_scope(&mut self, parent_node_key: NodeKey, current_node_key: NodeKey) {
         let child_count = self.child_count_stack.pop().unwrap();
-        let old_child_count = self.nodes[scope].children.len();
+        let old_child_count = self.nodes[current_node_key].children.len();
         if child_count < old_child_count {
-            let unmount_scopes = self
+            let unmount_nodes = self
                 .nodes
-                .get_mut(scope)
+                .get_mut(current_node_key)
                 .unwrap()
                 .children
                 .drain(child_count..);
-            self.unmount_scopes.extend(unmount_scopes);
+            self.unmount_nodes.extend(unmount_nodes);
         }
         if let Some(parent_child_count) = self.child_count_stack.last_mut() {
             *parent_child_count += 1;
         }
-        self.current_node = parent;
+        self.current_node_key = parent_node_key;
     }
 
     #[inline(always)]
@@ -253,13 +251,14 @@ where
         }
         let mut c = self.composer.write();
         let c = c.deref_mut();
-        let unmount_scopes = c
-            .unmount_scopes
-            .difference(&c.mount_scopes)
+        let unmount_nodes = c
+            .unmount_nodes
+            .difference(&c.mount_nodes)
             .cloned()
             .collect::<Vec<_>>();
-        for s in unmount_scopes {
-            if let Some(s) = c.nodes.remove(s).map(|n| n.scope) {
+        for n in unmount_nodes {
+            if let Some(s) = c.nodes.remove(n).map(|n| n.scope) {
+                c.scopes.remove(&s);
                 c.composables.remove(&s);
                 if let Some(scope_states) = c.states.remove(&s) {
                     for state in scope_states.keys() {
@@ -276,12 +275,12 @@ where
                 }
             }
         }
-        c.mount_scopes.clear();
-        c.unmount_scopes.clear();
+        c.mount_nodes.clear();
+        c.unmount_nodes.clear();
     }
 
-    pub fn root_node(&self) -> NodeKey {
-        self.composer.read().root_node
+    pub fn root_node_key(&self) -> NodeKey {
+        self.composer.read().root_node_key
     }
 
     pub fn with_context<F, T>(&self, func: F) -> T
@@ -321,15 +320,15 @@ where
     where
         N: Debug,
     {
-        self.print_tree_with(self.root_node(), |n| format!("{:?}", n));
+        self.print_tree_with(self.root_node_key(), |n| format!("{:?}", n));
     }
 
-    pub fn print_tree_with<D>(&self, node: NodeKey, display_fn: D)
+    pub fn print_tree_with<D>(&self, node_key: NodeKey, display_fn: D)
     where
         D: Fn(Option<&N>) -> String,
     {
         let c = self.composer.read();
-        utils::print_tree(&c, node, display_fn);
+        utils::print_tree(&c, node_key, display_fn);
     }
 }
 

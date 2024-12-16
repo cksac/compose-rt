@@ -45,9 +45,9 @@ where
     where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
-        let scope = self.child::<Div>();
+        let child_scope = self.child::<Div>();
         self.create_node(
-            scope,
+            child_scope,
             content,
             |_| {},
             |_, _| Node::new("div"),
@@ -60,9 +60,9 @@ where
     where
         T: Into<String> + Clone + 'static,
     {
-        let scope = self.child::<Button>();
+        let child_scope = self.child::<Button>();
         self.create_node(
-            scope,
+            child_scope,
             |_| {},
             move |_| text.clone().into(),
             |text, _| Node::new(format!("button({})", text)),
@@ -75,9 +75,9 @@ where
     where
         T: Into<String> + Clone + 'static,
     {
-        let scope = self.child::<Text>();
+        let child_scope = self.child::<Text>();
         self.create_node(
-            scope,
+            child_scope,
             |_| {},
             move |_| text.clone().into(),
             |text, _| Node::new(format!("text({})", text)),

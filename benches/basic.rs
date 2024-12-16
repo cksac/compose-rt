@@ -40,8 +40,8 @@ where
     where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
-        let scope = self.child::<Div>();
-        self.create_node(scope, content, |_| {}, |_, _| Node, |_, _, _| {});
+        let child_scope = self.child::<Div>();
+        self.create_node(child_scope, content, |_| {}, |_, _| Node, |_, _, _| {});
     }
 
     #[track_caller]
@@ -49,9 +49,9 @@ where
     where
         T: Into<String> + Clone + 'static,
     {
-        let scope = self.child::<Button>();
+        let child_scope = self.child::<Button>();
         self.create_node(
-            scope,
+            child_scope,
             |_| {},
             move |_| text.clone().into(),
             |_, _| Node,
@@ -64,9 +64,9 @@ where
     where
         T: Into<String> + Clone + 'static,
     {
-        let scope = self.child::<Text>();
+        let child_scope = self.child::<Text>();
         self.create_node(
-            scope,
+            child_scope,
             |_| {},
             move |_| text.clone().into(),
             |_, _| Node,

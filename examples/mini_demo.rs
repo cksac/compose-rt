@@ -43,10 +43,10 @@ where
     where
         C: Fn(Scope<Container>) + Clone + 'static,
     {
-        let scope = self.child::<Container>();
+        let child_scope = self.child::<Container>();
         let node = Node::new(Loc::new());
         self.create_node(
-            scope,
+            child_scope,
             content,
             |_| {},
             move |_, c| {
@@ -59,10 +59,10 @@ where
 
     #[track_caller]
     fn leaf(&self) {
-        let scope = self.child::<Left>();
+        let child_scope = self.child::<Left>();
         let node = Node::new(Loc::new());
         self.create_node(
-            scope,
+            child_scope,
             |_| {},
             |_| {},
             move |_, c| {

@@ -55,7 +55,7 @@ where
     where
         C: 'static,
     {
-        let id = ScopeId::new(self.id.id);
+        let id = ScopeId::new(self.id.child);
         Scope::new(id, self.composer)
     }
 
@@ -85,7 +85,7 @@ where
 
     pub fn create_node<C, T, I, A, F, U>(
         &self,
-        scope: Scope<T, N>,
+        child_scope: Scope<T, N>,
         content: C,
         input: I,
         factory: F,
@@ -98,29 +98,30 @@ where
         F: Fn(A, &mut N::Context) -> N + Clone + 'static,
         U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
     {
-        let parent = *self;
+        let parent_scope = *self;
         let composable = move || {
-            let mut scope = scope;
-            let is_dirty = {
-                let mut c = parent.composer.write();
+            let mut current_scope = child_scope;
+            let (parent_node_key, current_node_key, is_dirty) = {
+                let mut c = parent_scope.composer.write();
                 let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
-                    scope.set_key(key);
+                    current_scope.set_key(key);
                 }
-                let is_visited = c.scopes.contains_key(&scope.id);
-                let is_dirty = c.dirty_scopes.contains(&scope.id);
+                let current_scope_id = current_scope.id;
+                let is_visited = c.scopes.contains_key(&current_scope_id);
+                let is_dirty = c.dirty_scopes.contains(&current_scope_id);
                 let is_initialized = c.initialized;
-
                 if !is_dirty && is_visited {
                     c.skip_scope();
                     return;
                 }
-                let parent_child_idx = c.start_scope(scope.id);
-                let node_key = c.scopes.get(&scope.id).cloned().unwrap();
-                let parent_key = c.scopes.get(&parent.id).cloned().unwrap();
+                let parent_child_idx = c.child_count_stack.last().cloned();
+                let parent_node_key = c.scopes[&parent_scope.id];
+                c.start_scope(parent_node_key, current_scope_id);
+                let current_node_key = c.current_node_key;
                 {
                     update_node(
-                        node_key,
+                        current_node_key,
                         &mut c.context,
                         &mut c.nodes,
                         &input,
@@ -129,44 +130,44 @@ where
                     );
                     if is_initialized {
                         if let Some(curr_child_idx) = parent_child_idx {
-                            let parent_node = c.nodes.get_mut(parent_key).unwrap();
+                            let parent_node = c.nodes.get_mut(parent_node_key).unwrap();
                             if let Some(existing_child) =
                                 parent_node.children.get(curr_child_idx).cloned()
                             {
-                                if existing_child != node_key {
-                                    parent_node.children[curr_child_idx] = node_key;
-                                    c.unmount_scopes.insert(existing_child);
+                                if existing_child != current_node_key {
+                                    parent_node.children[curr_child_idx] = current_node_key;
+                                    c.unmount_nodes.insert(existing_child);
                                 }
                             } else {
-                                parent_node.children.push(node_key);
-                                c.mount_scopes.insert(node_key);
+                                parent_node.children.push(current_node_key);
+                                c.mount_nodes.insert(current_node_key);
                             }
                         }
-                    } else if let Some(parent_node) = c.nodes.get_mut(parent_key) {
-                        parent_node.children.push(node_key);
+                    } else if let Some(parent_node) = c.nodes.get_mut(parent_node_key) {
+                        parent_node.children.push(current_node_key);
                     }
                 };
-                is_dirty
+                (parent_node_key, current_node_key, is_dirty)
             };
-            content(scope);
-            let mut c = parent.composer.write();
+            content(current_scope);
+            let mut c = parent_scope.composer.write();
             let c = c.deref_mut();
             if is_dirty {
-                c.dirty_scopes.remove(&scope.id);
+                c.dirty_scopes.remove(&current_scope.id);
             }
-            c.end_scope(parent.id, scope.id);
+            c.end_scope(parent_node_key, current_node_key);
         };
         composable();
         let mut c = self.composer.write();
         c.composables
-            .entry(scope.id)
+            .entry(child_scope.id)
             .or_insert_with(|| Box::new(composable));
     }
 
     #[inline(always)]
     pub fn create_any_node<C, T, I, A, E, F, U>(
         &self,
-        scope: Scope<T, N>,
+        child_scope: Scope<T, N>,
         content: C,
         input: I,
         factory: F,
@@ -182,7 +183,7 @@ where
         U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
     {
         self.create_node(
-            scope,
+            child_scope,
             content,
             input,
             move |args, ctx| {
@@ -250,43 +251,36 @@ where
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
     pub parent: u64,
-    pub id: u64,
+    pub child: u64,
 }
 
 impl ScopeId {
     #[inline(always)]
-    pub fn with(parent: u64, id: u64) -> Self {
-        Self { parent, id }
+    pub fn with(parent: u64, child: u64) -> Self {
+        Self { parent, child }
     }
 
     #[track_caller]
     #[inline(always)]
     pub fn new(parent: u64) -> Self {
-        let id = (offset_to_anchor() as u64) << 32;
-        Self { parent, id }
+        let child = (offset_to_anchor() as u64) << 32;
+        Self { parent, child }
     }
 
     #[inline(always)]
     pub fn set_key(&mut self, key: u32) {
-        self.id = self.id + key as u64;
+        self.child = (self.child | 0xFFFF_FFFF_0000_0000) + key as u64;
+    }
+
+    #[inline(always)]
+    pub fn get_key(&mut self) -> u32 {
+        (self.child | 0x0000_0000_FFFF_FFFF) as u32
     }
 }
 
-// impl From<u64> for ScopeId {
-//     fn from(id: u64) -> Self {
-//         Self(id)
-//     }
-// }
-
-// impl From<ScopeId> for u64 {
-//     fn from(id: ScopeId) -> Self {
-//         id.0
-//     }
-// }
-
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ScopeId({}, {})", self.parent, self.id)
+        write!(f, "ScopeId({}, {})", self.parent, self.child)
     }
 }
 
