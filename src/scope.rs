@@ -261,8 +261,8 @@ where
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
-    pub(crate) parent: u64,
-    pub(crate) id: u64,
+    pub parent: u64,
+    pub id: u64,
 }
 
 impl ScopeId {
