@@ -54,6 +54,18 @@ impl NodeKey {
     }
 }
 
+impl From<u64> for NodeKey {
+    fn from(val: u64) -> Self {
+        NodeKey::new(val)
+    }
+}
+
+impl From<NodeKey> for u64 {
+    fn from(key: NodeKey) -> Self {
+        key.into()
+    }
+}
+
 pub struct Composer<N>
 where
     N: ComposeNode,
