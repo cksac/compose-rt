@@ -275,7 +275,7 @@ where
         func(&mut c.context)
     }
 
-    pub fn with_composer<F, T>(&mut self, func: F) -> T
+    pub fn with_composer<F, T>(&self, func: F) -> T
     where
         F: FnOnce(&Composer<N>) -> T,
     {
