@@ -13,7 +13,7 @@ where
 /// Recursive function that prints each node in the tree
 fn print_node<N, D>(
     composer: &Composer<N>,
-    node: NodeKey,
+    node_key: NodeKey,
     display_fn: &D,
     has_sibling: bool,
     lines_string: String,
@@ -21,7 +21,7 @@ fn print_node<N, D>(
     N: ComposeNode,
     D: Fn(Option<&N>) -> String,
 {
-    let node = &composer.nodes[node];
+    let node = &composer.nodes[node_key];
     let num_children = node.children.len();
     let fork_string = if has_sibling {
         "├── "
@@ -30,11 +30,12 @@ fn print_node<N, D>(
     };
     let id = node.scope.id;
     println!(
-        "{lines}{fork} {id:<20}: {display}",
+        "{lines}{fork} {id:0>20} {node_key:?}: {display}",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),
         id = id,
+        node_key = node_key,
     );
     let bar = if has_sibling { "│   " } else { "    " };
     let new_string = lines_string + bar;
