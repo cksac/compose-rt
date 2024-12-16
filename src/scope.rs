@@ -56,7 +56,7 @@ where
     where
         C: 'static,
     {
-        let mut id = ScopeId::new(self.id.id);
+        let id = ScopeId::new(self.id.id);
         Scope::new(id, self.composer)
     }
 
