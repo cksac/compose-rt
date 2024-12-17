@@ -1,12 +1,11 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut};
 
-use generational_box::{AnyStorage, GenerationalBox, Owner, UnsyncStorage};
+use generational_box::{AnyStorage, UnsyncStorage};
 use slab::Slab;
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
-use crate::{utils, Root, Scope, ScopeId, StateId};
+use crate::{Recomposer, Root, Scope, ScopeId, State, StateId};
 
 pub trait Composable {
     fn compose(&self);
@@ -116,20 +115,49 @@ where
 
     // TODO: fine control over the capacity of the HashMaps
     #[track_caller]
-    pub fn compose<F>(root: F, context: N::Context) -> Recomposer<N>
+    pub fn compose<R>(root: R, context: N::Context) -> Recomposer<(), N>
     where
-        F: Fn(Scope<Root, N>),
+        R: Fn(Scope<Root, N>),
     {
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new(0);
         let scope = Scope::new(id, composer);
         composer.write().start_root(scope.id);
+        let root_state = scope.use_state(|| {});
         root(scope);
         composer.write().end_root(scope.id);
         let mut c = composer.write();
         c.initialized = true;
-        Recomposer { owner, composer }
+        Recomposer {
+            owner,
+            composer,
+            root_state,
+        }
+    }
+
+    #[track_caller]
+    pub fn compose_with<R, F, T>(root: R, context: N::Context, state_fn: F) -> Recomposer<T, N>
+    where
+        R: Fn(Scope<Root, N>, State<T, N>),
+        F: Fn() -> T + 'static,
+        T: 'static,
+    {
+        let owner = UnsyncStorage::owner();
+        let composer = owner.insert(Composer::with_capacity(context, 1024));
+        let id = ScopeId::new(0);
+        let scope = Scope::new(id, composer);
+        composer.write().start_root(scope.id);
+        let root_state = scope.use_state(state_fn);
+        root(scope, root_state);
+        composer.write().end_root(scope.id);
+        let mut c = composer.write();
+        c.initialized = true;
+        Recomposer {
+            owner,
+            composer,
+            root_state,
+        }
     }
 
     #[inline(always)]
@@ -195,119 +223,6 @@ where
     }
 }
 
-pub struct Recomposer<N>
-where
-    N: ComposeNode,
-{
-    #[allow(dead_code)]
-    owner: Owner,
-    pub(crate) composer: GenerationalBox<Composer<N>>,
-}
-
-impl<N> Recomposer<N>
-where
-    N: ComposeNode,
-{
-    pub fn recompose(&mut self) {
-        let mut c = self.composer.write();
-        c.dirty_scopes.clear();
-        for state_id in c.dirty_states.drain().collect::<Vec<_>>() {
-            if let Some(scopes) = c.used_by.get(&state_id).cloned() {
-                c.dirty_scopes.extend(scopes);
-            }
-        }
-        let mut composables = Vec::with_capacity(c.dirty_scopes.len());
-        for scope in &c.dirty_scopes {
-            if let Some(composable) = c.composables.get(scope).cloned() {
-                composables.push(composable);
-            }
-        }
-        drop(c);
-        for composable in composables {
-            composable.compose();
-        }
-        let mut c = self.composer.write();
-        let c = c.deref_mut();
-        let unmount_nodes = c
-            .unmount_nodes
-            .difference(&c.mount_nodes)
-            .cloned()
-            .collect::<Vec<_>>();
-        for n in unmount_nodes {
-            let s = c.nodes.remove(n).scope;
-            c.scopes.remove(&s);
-            c.composables.remove(&s);
-            if let Some(scope_states) = c.states.remove(&s) {
-                for state in scope_states.keys() {
-                    c.used_by.remove(state);
-                }
-            }
-            let use_states = c.uses.remove(&s);
-            if let Some(use_states) = use_states {
-                for state in use_states {
-                    if let Some(used_by) = c.used_by.get_mut(&state) {
-                        used_by.remove(&s);
-                    }
-                }
-            }
-        }
-        c.mount_nodes.clear();
-        c.unmount_nodes.clear();
-    }
-
-    pub fn root_node_key(&self) -> NodeKey {
-        self.composer.read().root_node_key
-    }
-
-    pub fn with_context<F, T>(&self, func: F) -> T
-    where
-        F: FnOnce(&N::Context) -> T,
-    {
-        let c = self.composer.read();
-        func(&c.context)
-    }
-
-    pub fn with_context_mut<F, T>(&mut self, func: F) -> T
-    where
-        F: FnOnce(&mut N::Context) -> T,
-    {
-        let mut c = self.composer.write();
-        func(&mut c.context)
-    }
-
-    pub fn with_composer<F, T>(&self, func: F) -> T
-    where
-        F: FnOnce(&Composer<N>) -> T,
-    {
-        let c = self.composer.read();
-        func(c.deref())
-    }
-
-    pub fn with_composer_mut<F, T>(&mut self, func: F) -> T
-    where
-        F: FnOnce(&mut Composer<N>) -> T,
-    {
-        let mut c = self.composer.write();
-        func(c.deref_mut())
-    }
-
-    #[inline(always)]
-    pub fn print_tree(&self)
-    where
-        N: Debug,
-    {
-        self.print_tree_with(self.root_node_key(), |n| format!("{:?}", n));
-    }
-
-    pub fn print_tree_with<D>(&self, node_key: NodeKey, display_fn: D)
-    where
-        D: Fn(Option<&N>) -> String,
-    {
-        let c = self.composer.read();
-        utils::print_tree(&c, node_key, display_fn);
-    }
-}
-
 impl<N> Debug for Composer<N>
 where
     N: ComposeNode + Debug,
@@ -316,19 +231,6 @@ where
         f.debug_struct("Composer")
             .field("nodes", &self.nodes)
             .field("states", &self.states)
-            .finish()
-    }
-}
-
-impl<N> Debug for Recomposer<N>
-where
-    N: ComposeNode + Debug,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let c = self.composer.read();
-        f.debug_struct("Recomposer")
-            .field("nodes", &c.nodes)
-            .field("states", &c.states)
             .finish()
     }
 }

@@ -29,6 +29,36 @@ where
         }
     }
 
+    pub fn with<F, U>(&self, func: F) -> U
+    where
+        F: Fn(&T) -> U,
+    {
+        let mut c = self.composer.write();
+        let c = c.deref_mut();
+        let current_node_key = c.current_node_key;
+        let current_scope_id = c.nodes[current_node_key].scope;
+        let used_by = c.used_by.entry(self.id).or_default();
+        used_by.insert(current_scope_id);
+        let uses = c.uses.entry(current_scope_id).or_default();
+        uses.insert(self.id);
+        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let any_state = scope_states.get(&self.id).unwrap();
+        let state = any_state.downcast_ref::<T>().unwrap();
+        func(state)
+    }
+
+    pub fn with_untracked<F, U>(&self, func: F) -> U
+    where
+        F: Fn(&T) -> U,
+    {
+        let mut c = self.composer.write();
+        let c = c.deref_mut();
+        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let any_state = scope_states.get(&self.id).unwrap();
+        let state = any_state.downcast_ref::<T>().unwrap();
+        func(state)
+    }
+
     pub fn get(&self) -> T
     where
         T: Clone,
@@ -41,6 +71,18 @@ where
         used_by.insert(current_scope_id);
         let uses = c.uses.entry(current_scope_id).or_default();
         uses.insert(self.id);
+        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let any_state = scope_states.get(&self.id).unwrap();
+        let state = any_state.downcast_ref::<T>().unwrap();
+        state.clone()
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        let mut c = self.composer.write();
+        let c = c.deref_mut();
         let scope_states = c.states.get(&self.id.scope_id).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
