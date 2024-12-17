@@ -30,6 +30,7 @@ type Scope<S> = compose_rt::Scope<S, Node>;
 
 pub struct Div;
 pub struct Button;
+
 pub struct Text;
 
 pub trait Html {
