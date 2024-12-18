@@ -29,7 +29,7 @@ fn print_node<N, D>(
     };
     let scope_id = node.scope.child;
     println!(
-        "{lines}{fork} {display} [{scope_id:0>20} @ {node_key:?}]",
+        "{lines}{fork} {display} [{scope_id:?} @ {node_key:?}]",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),

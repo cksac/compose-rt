@@ -249,38 +249,66 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CallId(u64);
+
+impl CallId {
+    #[track_caller]
+    #[inline(always)]
+    pub fn new() -> Self {
+        let offset = (offset_to_anchor() as u64) << 32;
+        Self(offset)
+    }
+
+    #[inline(always)]
+    pub fn set_key(&mut self, key: u32) {
+        self.0 = (self.0 | 0xFFFF_FFFF_0000_0000) + key as u64;
+    }
+
+    #[inline(always)]
+    pub fn get_key(&self) -> u32 {
+        (self.0 & 0x0000_0000_FFFF_FFFF) as u32
+    }
+}
+
+impl Debug for CallId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "CallId({})", self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
-    pub parent: u64,
-    pub child: u64,
+    pub parent: CallId,
+    pub child: CallId,
 }
 
 impl ScopeId {
     #[inline(always)]
-    pub fn with(parent: u64, child: u64) -> Self {
+    pub fn with(parent: CallId, child: CallId) -> Self {
         Self { parent, child }
     }
 
     #[track_caller]
     #[inline(always)]
-    pub fn new(parent: u64) -> Self {
-        let child = (offset_to_anchor() as u64) << 32;
+    pub fn new(parent: CallId) -> Self {
+        let child = CallId::new();
         Self { parent, child }
     }
 
     #[inline(always)]
     pub fn set_key(&mut self, key: u32) {
-        self.child = (self.child | 0xFFFF_FFFF_0000_0000) + key as u64;
+        self.child.set_key(key);
     }
 
     #[inline(always)]
-    pub fn get_key(&mut self) -> u32 {
-        (self.child | 0x0000_0000_FFFF_FFFF) as u32
+    pub fn get_key(&self) -> u32 {
+        self.child.get_key()
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ScopeId({}, {})", self.parent, self.child)
+        write!(f, "ScopeId({:?}, {:?})", self.parent, self.child)
     }
 }
 

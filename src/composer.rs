@@ -5,6 +5,7 @@ use generational_box::{AnyStorage, UnsyncStorage};
 use slab::Slab;
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
+use crate::scope::CallId;
 use crate::{Recomposer, Root, Scope, ScopeId, State, StateId};
 
 pub trait Composable {
@@ -121,7 +122,7 @@ where
     {
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(context, 1024));
-        let id = ScopeId::new(0);
+        let id = ScopeId::new(CallId::new());
         let scope = Scope::new(id, composer);
         composer.write().start_root(scope.id);
         let root_state = scope.use_state(|| {});
@@ -145,7 +146,7 @@ where
     {
         let owner = UnsyncStorage::owner();
         let composer = owner.insert(Composer::with_capacity(context, 1024));
-        let id = ScopeId::new(0);
+        let id = ScopeId::new(CallId::new());
         let scope = Scope::new(id, composer);
         composer.write().start_root(scope.id);
         let root_state = scope.use_state(state_fn);
