@@ -113,7 +113,7 @@ where
                 let is_visited = c.composables.contains_key(&current_node_key);
                 let is_dirty = c.dirty_nodes.contains(&current_node_key);
                 if !is_dirty && is_visited {
-                    c.skip_scope(current_node_key);
+                    c.skip_scope();
                     return current_node_key;
                 }
                 update_node(
@@ -132,7 +132,7 @@ where
             if is_dirty {
                 c.dirty_nodes.remove(&current_node_key);
             }
-            c.end_scope(current_node_key);
+            c.end_scope();
             current_node_key
         };
         let current_node_key = composable();

@@ -120,10 +120,10 @@ where
         let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new();
         let scope = Scope::new(id, composer);
-        let node_key = composer.write().start_root(scope.id);
+        composer.write().start_root(scope.id);
         let root_state = scope.use_state(|| {});
         root(scope);
-        composer.write().end_root(node_key);
+        composer.write().end_root();
         let mut c = composer.write();
         c.initialized = true;
         Recomposer {
@@ -144,10 +144,10 @@ where
         let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new();
         let scope = Scope::new(id, composer);
-        let node_key = composer.write().start_root(scope.id);
+        composer.write().start_root(scope.id);
         let root_state = scope.use_state(state_fn);
         root(scope, root_state);
-        composer.write().end_root(node_key);
+        composer.write().end_root();
         let mut c = composer.write();
         c.initialized = true;
         Recomposer {
@@ -158,7 +158,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_root(&mut self, scope_id: ScopeId) -> NodeKey {
+    pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
         let parent_node_key = 0;
         let node_key = self.nodes.insert(Node {
             scope: scope_id,
@@ -168,14 +168,13 @@ where
         });
         self.child_idx_stack.push(0);
         self.current_node_key = node_key;
-        node_key
     }
 
     #[inline(always)]
-    pub(crate) fn end_root(&mut self, node_key: NodeKey) {
+    pub(crate) fn end_root(&mut self) {
         let child_count = self.child_idx_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
-        self.root_node_key = self.nodes[node_key].children[0];
+        self.root_node_key = self.nodes[self.current_node_key].children[0];
     }
 
     #[inline(always)]
@@ -237,9 +236,9 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn end_scope(&mut self, node_key: NodeKey) {
+    pub(crate) fn end_scope(&mut self) {
         let child_count = self.child_idx_stack.pop().unwrap();
-        let node = &mut self.nodes[node_key];
+        let node = &mut self.nodes[self.current_node_key];
         let old_child_count = node.children.len();
         if child_count < old_child_count {
             let unmount_nodes = node.children.drain(child_count..);
@@ -252,9 +251,9 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_scope(&mut self, node_key: NodeKey) {
+    pub(crate) fn skip_scope(&mut self) {
         let _ = self.child_idx_stack.pop().unwrap();
-        let node = &mut self.nodes[node_key];
+        let node = &mut self.nodes[self.current_node_key];
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {
             *parent_child_count += 1;
         }
