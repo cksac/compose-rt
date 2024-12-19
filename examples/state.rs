@@ -60,7 +60,7 @@ where
 fn app(s: Scope<Root>, count: State<usize>) {
     s.container(move |s| {
         for i in 0..count.get() {
-            s.key(i as u32, |s| {
+            s.key(i, |s| {
                 s.container(|s| {
                     s.leaf();
                 });

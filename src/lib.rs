@@ -23,6 +23,7 @@ const ANCHOR: Loc = Loc::new();
 
 #[track_caller]
 #[inline(always)]
+#[allow(dead_code)]
 pub(crate) fn offset_to_anchor() -> i64 {
     let anchor = ANCHOR.id() as i64;
     let loc = Loc::new().id() as i64;

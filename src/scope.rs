@@ -8,7 +8,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::{Node, NodeKey};
-use crate::{offset_to_anchor, ComposeNode, Composer, Loc, State, StateId};
+use crate::{ComposeNode, Composer, Loc, State, StateId};
 
 pub struct Scope<S, N>
 where
@@ -45,7 +45,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn set_key(&mut self, key: u32) {
+    pub(crate) fn set_key(&mut self, key: usize) {
         self.id.set_key(key);
     }
 
@@ -75,7 +75,7 @@ where
 
     #[track_caller]
     #[inline(always)]
-    pub fn key<C>(&self, key: u32, content: C)
+    pub fn key<C>(&self, key: usize, content: C)
     where
         C: Fn(Self) + 'static,
     {
@@ -227,39 +227,10 @@ where
     }
 }
 
-// #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub struct CallId(u64);
-
-// impl CallId {
-//     #[track_caller]
-//     #[inline(always)]
-//     pub fn new() -> Self {
-//         let offset = (offset_to_anchor() as u64) << 32;
-//         Self(offset)
-//     }
-
-//     #[inline(always)]
-//     pub fn set_key(&mut self, key: u32) {
-//         self.0 = (self.0 | 0xFFFF_FFFF_0000_0000) + key as u64;
-//     }
-
-//     #[inline(always)]
-//     pub fn get_key(&self) -> u32 {
-//         (self.0 & 0x0000_0000_FFFF_FFFF) as u32
-//     }
-// }
-
-// impl Debug for CallId {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         write!(f, "CallId({})", self.0)
-//     }
-// }
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
     pub loc: Loc,
-    pub key: u32,
-    //pub id: CallId,
+    pub key: usize,
 }
 
 impl ScopeId {
@@ -268,26 +239,22 @@ impl ScopeId {
     pub fn new() -> Self {
         let loc = Loc::new();
         Self { loc, key: 0 }
-        //Self { id: CallId::new() }
     }
 
     #[inline(always)]
-    pub fn set_key(&mut self, key: u32) {
+    pub fn set_key(&mut self, key: usize) {
         self.key = key;
-        //self.id.set_key(key);
     }
 
     #[inline(always)]
-    pub fn get_key(&self) -> u32 {
+    pub fn get_key(&self) -> usize {
         self.key
-        //self.id.get_key()
     }
 }
 
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ScopeId( {:?} , {})", self.loc, self.key)
-        //write!(f, "ScopeId({:?})", self.id)
+        write!(f, "{:?} - {}", self.loc, self.key)
     }
 }
 

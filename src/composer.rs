@@ -58,7 +58,7 @@ where
     pub(crate) used_by: Map<StateId, Set<NodeKey>>,
     pub(crate) uses: Map<NodeKey, Set<StateId>>,
     pub(crate) current_node_key: NodeKey,
-    pub(crate) key_stack: Vec<u32>,
+    pub(crate) key_stack: Vec<usize>,
     pub(crate) node_stack: Vec<(NodeKey, usize)>,
     pub(crate) dirty_states: Set<StateId>,
     pub(crate) dirty_nodes: Set<NodeKey>,
@@ -256,7 +256,6 @@ where
     #[inline(always)]
     pub(crate) fn skip_scope(&mut self) {
         let (_, child_count) = self.node_stack.pop().unwrap();
-
         if let Some((_, parent_child_count)) = self.node_stack.last_mut() {
             *parent_child_count += 1;
         }

@@ -4,7 +4,7 @@ use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
 
-use crate::{ComposeNode, Composer, Loc, NodeKey, ScopeId};
+use crate::{ComposeNode, Composer, Loc, NodeKey};
 
 pub struct State<T, N>
 where
