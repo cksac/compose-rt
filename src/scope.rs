@@ -102,15 +102,14 @@ where
         let parent_scope = *self;
         let composable = move || {
             let mut current_scope = child_scope;
-            let (parent, current_node_key, is_dirty) = {
+            let (current_node_key, is_dirty) = {
                 let mut c = parent_scope.composer.write();
                 let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
                     current_scope.set_key(key);
                 }
                 let current_scope_id = current_scope.id;
-                let parent = c.node_stack.last().cloned();
-                c.start_scope(parent, current_scope_id);
+                c.start_scope(current_scope_id);
                 let current_node_key = c.current_node_key;
                 let is_visited = c.composables.contains_key(&current_node_key);
                 let is_dirty = c.dirty_nodes.contains(&current_node_key);
@@ -126,7 +125,7 @@ where
                     &factory,
                     &update,
                 );
-                (parent, current_node_key, is_dirty)
+                (current_node_key, is_dirty)
             };
             content(current_scope);
             let mut c = parent_scope.composer.write();
@@ -134,7 +133,7 @@ where
             if is_dirty {
                 c.dirty_nodes.remove(&current_node_key);
             }
-            c.end_scope(parent, current_node_key);
+            c.end_scope(current_node_key);
             current_node_key
         };
         let current_node_key = composable();

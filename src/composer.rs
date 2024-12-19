@@ -5,7 +5,6 @@ use generational_box::{AnyStorage, UnsyncStorage};
 use slab::Slab;
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
-use crate::scope::CallId;
 use crate::{Recomposer, Root, Scope, ScopeId, State, StateId};
 
 pub trait Composable {
@@ -173,17 +172,14 @@ where
 
     #[inline(always)]
     pub(crate) fn end_root(&mut self, scope_id: ScopeId) {
-        let (_, child_count) = self.node_stack.pop().unwrap();
+        let (node_key, child_count) = self.node_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
-        self.root_node_key = self.nodes[self.current_node_key].children[0];
+        self.root_node_key = self.nodes[node_key].children[0];
     }
 
     #[inline(always)]
-    pub(crate) fn start_scope(
-        &mut self,
-        parent: Option<(NodeKey, usize)>,
-        current_scope_id: ScopeId,
-    ) {
+    pub(crate) fn start_scope(&mut self, current_scope_id: ScopeId) {
+        let parent = self.node_stack.last().cloned();
         if self.initialized {
             if let Some((parent_node_key, child_idx)) = parent {
                 let parent_node = &mut self.nodes[parent_node_key];
@@ -239,11 +235,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn end_scope(
-        &mut self,
-        parent: Option<(NodeKey, usize)>,
-        current_node_key: NodeKey,
-    ) {
+    pub(crate) fn end_scope(&mut self, current_node_key: NodeKey) {
         let (_, child_count) = self.node_stack.pop().unwrap();
         let old_child_count = self.nodes[current_node_key].children.len();
         if child_count < old_child_count {
