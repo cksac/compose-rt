@@ -31,11 +31,15 @@ where
         let mut composables = Vec::with_capacity(c.dirty_scopes.len());
         for scope in &c.dirty_scopes {
             if let Some(composable) = c.composables.get(scope).cloned() {
-                composables.push(composable);
+                composables.push((*scope, composable));
             }
         }
         drop(c);
-        for composable in composables {
+        for (node_key, composable) in composables {
+            {
+                let mut c = self.composer.write();
+                c.current_node_key = node_key;
+            }
             composable.compose();
         }
         let mut c = self.composer.write();
@@ -46,19 +50,18 @@ where
             .cloned()
             .collect::<Vec<_>>();
         for n in unmount_nodes {
-            let s = c.nodes.remove(n).scope;
-            c.scopes.remove(&s);
-            c.composables.remove(&s);
-            if let Some(scope_states) = c.states.remove(&s) {
+            c.composables.remove(&n);
+            c.nodes.remove(n);
+            if let Some(scope_states) = c.states.remove(&n) {
                 for state in scope_states.keys() {
                     c.used_by.remove(state);
                 }
             }
-            let use_states = c.uses.remove(&s);
+            let use_states = c.uses.remove(&n);
             if let Some(use_states) = use_states {
                 for state in use_states {
                     if let Some(used_by) = c.used_by.get_mut(&state) {
-                        used_by.remove(&s);
+                        used_by.remove(&n);
                     }
                 }
             }
@@ -154,6 +157,7 @@ where
         f.debug_struct("Recomposer")
             .field("nodes", &c.nodes)
             .field("states", &c.states)
+            .field("dirty_states", &c.dirty_states)
             .finish()
     }
 }

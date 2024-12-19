@@ -27,13 +27,13 @@ fn print_node<N, D>(
     } else {
         "└── "
     };
-    let scope_id = node.scope.child;
+    let scope = node.scope;
     println!(
-        "{lines}{fork} {display} [{scope_id:?} @ {node_key:?}]",
+        "{lines}{fork} {display} [{scope:?} @ {node_key:?}]",
         lines = lines_string,
         fork = fork_string,
         display = display_fn(node.data.as_ref()),
-        scope_id = scope_id,
+        scope = scope,
         node_key = node_key,
     );
     let bar = if has_sibling { "│   " } else { "    " };

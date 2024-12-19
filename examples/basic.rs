@@ -123,13 +123,18 @@ fn main() {
         .unwrap_or("true".to_string())
         .parse()
         .unwrap();
+    println!("count: {}, iter: {}, print: {}", count, iter, print);
     let start = std::time::Instant::now();
     let mut recomposer = Composer::compose(move |s| app(s, count), ());
+    if print {
+        recomposer.print_tree();
+    }
     for _ in 0..iter {
         recomposer.recompose();
     }
     if print {
         recomposer.print_tree();
     }
+    //println!("{:#?}", recomposer);
     println!("Time: {:?}", start.elapsed());
 }

@@ -75,33 +75,32 @@ where
 }
 
 #[track_caller]
+fn inner_component(s: Scope<Container>) {
+    s.container(move |s| {
+        s.leaf();
+        s.leaf();
+    });
+}
+
+#[track_caller]
 fn component(s: Scope<Container>) {
     s.container(move |s| {
-        for i in 0..30 {
-            s.key(i, |s| {
-                s.leaf();
-            });
-        }
+        inner_component(s);
+        inner_component(s);
     });
 }
 
 fn app(s: Scope<Root>) {
     s.container(move |s| {
-        for i in 0..2 {
-            s.key(i, |s| {
-                s.container(move |s| {
-                    component(s);
-                    component(s);
-                });
-            });
-        }
+        component(s);
+        component(s);
     });
 }
 
 fn main() {
-    let recomposer = Composer::compose(app, 0);
+    let mut recomposer = Composer::compose(app, 0);
     recomposer.print_tree();
     recomposer.with_context(|c| {
         println!("Node count: {}", c);
-    })
+    });
 }

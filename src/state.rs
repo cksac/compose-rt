@@ -4,7 +4,7 @@ use std::ops::DerefMut;
 
 use generational_box::GenerationalBox;
 
-use crate::{ComposeNode, Composer, Loc, ScopeId};
+use crate::{ComposeNode, Composer, Loc, NodeKey, ScopeId};
 
 pub struct State<T, N>
 where
@@ -36,12 +36,11 @@ where
         let mut c = self.composer.write();
         let c = c.deref_mut();
         let current_node_key = c.current_node_key;
-        let current_scope_id = c.nodes[current_node_key].scope;
         let used_by = c.used_by.entry(self.id).or_default();
-        used_by.insert(current_scope_id);
-        let uses = c.uses.entry(current_scope_id).or_default();
+        used_by.insert(current_node_key);
+        let uses = c.uses.entry(current_node_key).or_default();
         uses.insert(self.id);
-        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let scope_states = c.states.get(&self.id.node_key).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         func(state)
@@ -53,7 +52,7 @@ where
     {
         let mut c = self.composer.write();
         let c = c.deref_mut();
-        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let scope_states = c.states.get(&self.id.node_key).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         func(state)
@@ -66,12 +65,11 @@ where
         let mut c = self.composer.write();
         let c = c.deref_mut();
         let current_node_key = c.current_node_key;
-        let current_scope_id = c.nodes[current_node_key].scope;
         let used_by = c.used_by.entry(self.id).or_default();
-        used_by.insert(current_scope_id);
-        let uses = c.uses.entry(current_scope_id).or_default();
+        used_by.insert(current_node_key);
+        let uses = c.uses.entry(current_node_key).or_default();
         uses.insert(self.id);
-        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let scope_states = c.states.get(&self.id.node_key).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         state.clone()
@@ -83,7 +81,7 @@ where
     {
         let mut c = self.composer.write();
         let c = c.deref_mut();
-        let scope_states = c.states.get(&self.id.scope_id).unwrap();
+        let scope_states = c.states.get(&self.id.node_key).unwrap();
         let any_state = scope_states.get(&self.id).unwrap();
         let state = any_state.downcast_ref::<T>().unwrap();
         state.clone()
@@ -93,7 +91,7 @@ where
         let mut c = self.composer.write();
         let c = c.deref_mut();
         c.dirty_states.insert(self.id);
-        let scope_states = c.states.entry(self.id.scope_id).or_default();
+        let scope_states = c.states.entry(self.id.node_key).or_default();
         let val = scope_states.get_mut(&self.id).unwrap();
         *val = Box::new(value);
     }
@@ -124,16 +122,16 @@ impl<T, N> Copy for State<T, N> where N: ComposeNode {}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateId {
-    pub(crate) scope_id: ScopeId,
+    pub(crate) node_key: NodeKey,
     loc: Loc,
 }
 
 impl StateId {
     #[track_caller]
     #[inline(always)]
-    pub fn new(scope_id: ScopeId) -> Self {
+    pub fn new(node_key: NodeKey) -> Self {
         Self {
-            scope_id,
+            node_key,
             loc: Loc::new(),
         }
     }
@@ -141,6 +139,6 @@ impl StateId {
 
 impl Debug for StateId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "StateId({:?},{:?})", self.scope_id, self.loc)
+        write!(f, "StateId({:?},{:?})", self.node_key, self.loc)
     }
 }
