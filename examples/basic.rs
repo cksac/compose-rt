@@ -96,7 +96,7 @@ fn app(s: Scope<Root>, n: usize) {
                 count.set(n);
             } else {
                 for i in 0..c {
-                    s.key(i as u32, move |s| {
+                    s.key(i, move |s| {
                         s.button(format!("Item {}", i));
                     });
                 }

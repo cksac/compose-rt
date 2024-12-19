@@ -59,7 +59,6 @@ where
     pub(crate) uses: Map<NodeKey, Set<StateId>>,
     pub(crate) current_node_key: NodeKey,
     pub(crate) key_stack: Vec<usize>,
-    pub(crate) node_stack: Vec<NodeKey>,
     pub(crate) child_idx_stack: Vec<usize>,
     pub(crate) dirty_states: Set<StateId>,
     pub(crate) dirty_nodes: Set<NodeKey>,
@@ -83,7 +82,6 @@ where
             uses: Map::new(),
             current_node_key: 0,
             key_stack: Vec::new(),
-            node_stack: Vec::new(),
             child_idx_stack: Vec::new(),
             dirty_states: Set::new(),
             dirty_nodes: Set::new(),
@@ -103,7 +101,6 @@ where
             used_by: Map::with_capacity(capacity),
             uses: Map::with_capacity(capacity),
             current_node_key: 0,
-            node_stack: Vec::new(),
             child_idx_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
@@ -123,10 +120,10 @@ where
         let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new();
         let scope = Scope::new(id, composer);
-        composer.write().start_root(scope.id);
+        let node_key = composer.write().start_root(scope.id);
         let root_state = scope.use_state(|| {});
         root(scope);
-        composer.write().end_root(scope.id);
+        composer.write().end_root(node_key);
         let mut c = composer.write();
         c.initialized = true;
         Recomposer {
@@ -147,10 +144,10 @@ where
         let composer = owner.insert(Composer::with_capacity(context, 1024));
         let id = ScopeId::new();
         let scope = Scope::new(id, composer);
-        composer.write().start_root(scope.id);
+        let node_key = composer.write().start_root(scope.id);
         let root_state = scope.use_state(state_fn);
         root(scope, root_state);
-        composer.write().end_root(scope.id);
+        composer.write().end_root(node_key);
         let mut c = composer.write();
         c.initialized = true;
         Recomposer {
@@ -161,7 +158,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
+    pub(crate) fn start_root(&mut self, scope_id: ScopeId) -> NodeKey {
         let parent_node_key = 0;
         let node_key = self.nodes.insert(Node {
             scope: scope_id,
@@ -169,114 +166,99 @@ where
             parent: parent_node_key,
             children: Vec::new(),
         });
-        self.node_stack.push(node_key);
         self.child_idx_stack.push(0);
         self.current_node_key = node_key;
+        node_key
     }
 
     #[inline(always)]
-    pub(crate) fn end_root(&mut self, scope_id: ScopeId) {
-        let node_key = self.node_stack.pop().unwrap();
+    pub(crate) fn end_root(&mut self, node_key: NodeKey) {
         let child_count = self.child_idx_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
         self.root_node_key = self.nodes[node_key].children[0];
     }
 
     #[inline(always)]
-    pub(crate) fn start_scope(&mut self, current_scope_id: ScopeId) {
-        let parent = self.node_stack.last().cloned();
+    pub(crate) fn start_scope(&mut self, scope_id: ScopeId) {
         let child_idx = self.child_idx_stack.last().cloned();
         if self.initialized {
-            if let Some(parent_node_key) = parent {
-                let child_idx = child_idx.unwrap();
+            if let Some(child_idx) = child_idx {
+                let parent_node_key = self.current_node_key;
                 let parent_node = &mut self.nodes[parent_node_key];
                 if child_idx < parent_node.children.len() {
                     let child_key = parent_node.children[child_idx];
                     let child_node = &mut self.nodes[child_key];
-                    if child_node.scope == current_scope_id {
+                    if child_node.scope == scope_id {
                         self.current_node_key = child_key;
                         self.mount_nodes.insert(child_key);
-                        self.node_stack.push(self.current_node_key);
                         self.child_idx_stack.push(0);
                     } else {
-                        let current_node_key = self.nodes.insert(Node {
-                            scope: current_scope_id,
+                        let node_key = self.nodes.insert(Node {
+                            scope: scope_id,
                             data: None,
                             parent: parent_node_key,
                             children: Vec::new(),
                         });
-                        self.nodes[parent_node_key].children[child_idx] = current_node_key;
+                        self.nodes[parent_node_key].children[child_idx] = node_key;
                         self.unmount_nodes.insert(child_key);
-                        self.mount_nodes.insert(current_node_key);
-                        self.current_node_key = current_node_key;
-                        self.node_stack.push(current_node_key);
+                        self.mount_nodes.insert(node_key);
+                        self.current_node_key = node_key;
                         self.child_idx_stack.push(0);
                     }
                 } else {
-                    let current_node_key = self.nodes.insert(Node {
-                        scope: current_scope_id,
+                    let node_key = self.nodes.insert(Node {
+                        scope: scope_id,
                         data: None,
                         parent: parent_node_key,
                         children: Vec::new(),
                     });
-                    self.nodes[parent_node_key].children.push(current_node_key);
-                    self.mount_nodes.insert(current_node_key);
-                    self.current_node_key = current_node_key;
-                    self.node_stack.push(current_node_key);
+                    self.nodes[parent_node_key].children.push(node_key);
+                    self.mount_nodes.insert(node_key);
+                    self.current_node_key = node_key;
                     self.child_idx_stack.push(0);
                 }
             } else {
                 // recompose root
-                self.node_stack.push(self.current_node_key);
                 self.child_idx_stack.push(0);
             }
         } else {
             // first compose
-            let parent_node_key = parent.unwrap();
-            let current_node_key = self.nodes.insert(Node {
-                scope: current_scope_id,
+            let parent_node_key = self.current_node_key;
+            let node_key = self.nodes.insert(Node {
+                scope: scope_id,
                 data: None,
                 parent: parent_node_key,
                 children: Vec::new(),
             });
-            self.nodes[parent_node_key].children.push(current_node_key);
-            self.current_node_key = current_node_key;
-            self.node_stack.push(current_node_key);
+            self.nodes[parent_node_key].children.push(node_key);
+            self.current_node_key = node_key;
             self.child_idx_stack.push(0);
         }
     }
 
     #[inline(always)]
-    pub(crate) fn end_scope(&mut self, current_node_key: NodeKey) {
-        let node_key = self.node_stack.pop().unwrap();
+    pub(crate) fn end_scope(&mut self, node_key: NodeKey) {
         let child_count = self.child_idx_stack.pop().unwrap();
-
-        let old_child_count = self.nodes[current_node_key].children.len();
+        let node = &mut self.nodes[node_key];
+        let old_child_count = node.children.len();
         if child_count < old_child_count {
-            let unmount_nodes = self
-                .nodes
-                .get_mut(current_node_key)
-                .unwrap()
-                .children
-                .drain(child_count..);
+            let unmount_nodes = node.children.drain(child_count..);
             self.unmount_nodes.extend(unmount_nodes);
-        }
-        if let Some(parent_node_key) = self.node_stack.last_mut() {
-            self.current_node_key = *parent_node_key;
         }
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {
             *parent_child_count += 1;
         }
+        self.current_node_key = node.parent;
     }
 
     #[inline(always)]
-    pub(crate) fn skip_scope(&mut self) {
-        let node_key = self.node_stack.pop().unwrap();
-        let child_count = self.child_idx_stack.pop().unwrap();
-
+    pub(crate) fn skip_scope(&mut self, node_key: NodeKey) {
+        let _ = self.child_idx_stack.pop().unwrap();
+        let node = &mut self.nodes[node_key];
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {
             *parent_child_count += 1;
         }
+        self.current_node_key = node.parent;
     }
 }
 
