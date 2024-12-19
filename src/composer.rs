@@ -62,7 +62,7 @@ where
     pub(crate) key_stack: Vec<u32>,
     pub(crate) node_stack: Vec<(NodeKey, usize)>,
     pub(crate) dirty_states: Set<StateId>,
-    pub(crate) dirty_scopes: Set<NodeKey>,
+    pub(crate) dirty_nodes: Set<NodeKey>,
     pub(crate) mount_nodes: Set<NodeKey>,
     pub(crate) unmount_nodes: Set<NodeKey>,
 }
@@ -85,7 +85,7 @@ where
             key_stack: Vec::new(),
             node_stack: Vec::new(),
             dirty_states: Set::new(),
-            dirty_scopes: Set::new(),
+            dirty_nodes: Set::new(),
             mount_nodes: Set::new(),
             unmount_nodes: Set::new(),
         }
@@ -105,7 +105,7 @@ where
             node_stack: Vec::new(),
             key_stack: Vec::new(),
             dirty_states: Set::new(),
-            dirty_scopes: Set::new(),
+            dirty_nodes: Set::new(),
             mount_nodes: Set::with_capacity(capacity),
             unmount_nodes: Set::new(),
         }

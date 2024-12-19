@@ -98,7 +98,7 @@ fn app(s: Scope<Root>) {
 }
 
 fn main() {
-    let mut recomposer = Composer::compose(app, 0);
+    let recomposer = Composer::compose(app, 0);
     recomposer.print_tree();
     recomposer.with_context(|c| {
         println!("Node count: {}", c);

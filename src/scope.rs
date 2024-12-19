@@ -113,7 +113,7 @@ where
                 c.start_scope(parent, current_scope_id);
                 let current_node_key = c.current_node_key;
                 let is_visited = c.composables.contains_key(&current_node_key);
-                let is_dirty = c.dirty_scopes.contains(&current_node_key);
+                let is_dirty = c.dirty_nodes.contains(&current_node_key);
                 if !is_dirty && is_visited {
                     c.skip_scope();
                     return current_node_key;
@@ -132,7 +132,7 @@ where
             let mut c = parent_scope.composer.write();
             let c = c.deref_mut();
             if is_dirty {
-                c.dirty_scopes.remove(&current_node_key);
+                c.dirty_nodes.remove(&current_node_key);
             }
             c.end_scope(parent, current_node_key);
             current_node_key
@@ -228,33 +228,33 @@ where
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallId(u64);
+// #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// pub struct CallId(u64);
 
-impl CallId {
-    #[track_caller]
-    #[inline(always)]
-    pub fn new() -> Self {
-        let offset = (offset_to_anchor() as u64) << 32;
-        Self(offset)
-    }
+// impl CallId {
+//     #[track_caller]
+//     #[inline(always)]
+//     pub fn new() -> Self {
+//         let offset = (offset_to_anchor() as u64) << 32;
+//         Self(offset)
+//     }
 
-    #[inline(always)]
-    pub fn set_key(&mut self, key: u32) {
-        self.0 = (self.0 | 0xFFFF_FFFF_0000_0000) + key as u64;
-    }
+//     #[inline(always)]
+//     pub fn set_key(&mut self, key: u32) {
+//         self.0 = (self.0 | 0xFFFF_FFFF_0000_0000) + key as u64;
+//     }
 
-    #[inline(always)]
-    pub fn get_key(&self) -> u32 {
-        (self.0 & 0x0000_0000_FFFF_FFFF) as u32
-    }
-}
+//     #[inline(always)]
+//     pub fn get_key(&self) -> u32 {
+//         (self.0 & 0x0000_0000_FFFF_FFFF) as u32
+//     }
+// }
 
-impl Debug for CallId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "CallId({})", self.0)
-    }
-}
+// impl Debug for CallId {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         write!(f, "CallId({})", self.0)
+//     }
+// }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {

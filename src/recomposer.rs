@@ -22,16 +22,16 @@ where
 {
     pub fn recompose(&mut self) {
         let mut c = self.composer.write();
-        c.dirty_scopes.clear();
+        c.dirty_nodes.clear();
         for state_id in c.dirty_states.drain().collect::<Vec<_>>() {
-            if let Some(scopes) = c.used_by.get(&state_id).cloned() {
-                c.dirty_scopes.extend(scopes);
+            if let Some(nodes) = c.used_by.get(&state_id).cloned() {
+                c.dirty_nodes.extend(nodes);
             }
         }
-        let mut composables = Vec::with_capacity(c.dirty_scopes.len());
-        for scope in &c.dirty_scopes {
-            if let Some(composable) = c.composables.get(scope).cloned() {
-                composables.push((*scope, composable));
+        let mut composables = Vec::with_capacity(c.dirty_nodes.len());
+        for node_key in &c.dirty_nodes {
+            if let Some(composable) = c.composables.get(node_key).cloned() {
+                composables.push((*node_key, composable));
             }
         }
         drop(c);
@@ -52,8 +52,8 @@ where
         for n in unmount_nodes {
             c.composables.remove(&n);
             c.nodes.remove(n);
-            if let Some(scope_states) = c.states.remove(&n) {
-                for state in scope_states.keys() {
+            if let Some(node_states) = c.states.remove(&n) {
+                for state in node_states.keys() {
                     c.used_by.remove(state);
                 }
             }
