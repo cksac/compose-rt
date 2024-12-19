@@ -108,12 +108,12 @@ where
                 if let Some(key) = c.key_stack.last().copied() {
                     current_scope.set_key(key);
                 }
-                c.start_scope(current_scope.id);
+                c.start_node(current_scope.id);
                 let current_node_key = c.current_node_key;
                 let is_visited = c.composables.contains_key(&current_node_key);
                 let is_dirty = c.dirty_nodes.contains(&current_node_key);
                 if !is_dirty && is_visited {
-                    c.skip_scope();
+                    c.skip_node();
                     return current_node_key;
                 }
                 update_node(
@@ -132,7 +132,7 @@ where
             if is_dirty {
                 c.dirty_nodes.remove(&current_node_key);
             }
-            c.end_scope();
+            c.end_node();
             current_node_key
         };
         let current_node_key = composable();

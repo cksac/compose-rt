@@ -178,7 +178,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_scope(&mut self, scope_id: ScopeId) {
+    pub(crate) fn start_node(&mut self, scope_id: ScopeId) {
         let child_idx = self.child_idx_stack.last().cloned();
         if self.initialized {
             if let Some(child_idx) = child_idx {
@@ -236,7 +236,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn end_scope(&mut self) {
+    pub(crate) fn end_node(&mut self) {
         let child_count = self.child_idx_stack.pop().unwrap();
         let node = &mut self.nodes[self.current_node_key];
         let old_child_count = node.children.len();
@@ -251,7 +251,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_scope(&mut self) {
+    pub(crate) fn skip_node(&mut self) {
         let _ = self.child_idx_stack.pop().unwrap();
         let node = &mut self.nodes[self.current_node_key];
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {

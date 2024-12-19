@@ -157,7 +157,6 @@ where
         f.debug_struct("Recomposer")
             .field("nodes", &c.nodes)
             .field("states", &c.states)
-            .field("dirty_states", &c.dirty_states)
             .finish()
     }
 }
