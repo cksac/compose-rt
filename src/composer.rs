@@ -269,6 +269,7 @@ where
         f.debug_struct("Composer")
             .field("nodes", &self.nodes)
             .field("states", &self.states)
+            .field("dirty_states", &self.dirty_states)
             .finish()
     }
 }
