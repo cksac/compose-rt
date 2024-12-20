@@ -178,20 +178,21 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn start_node(&mut self, scope_id: ScopeId) {
-        let child_idx = self.child_idx_stack.last().cloned();
+    pub(crate) fn start_node(&mut self, parent_node_key: NodeKey, scope_id: ScopeId) {
         if self.initialized {
+            let child_idx = self.child_idx_stack.last().cloned();
             if let Some(child_idx) = child_idx {
-                let parent_node_key = self.current_node_key;
                 let parent_node = &mut self.nodes[parent_node_key];
                 if child_idx < parent_node.children.len() {
                     let child_key = parent_node.children[child_idx];
                     let child_node = &mut self.nodes[child_key];
                     if child_node.scope == scope_id {
+                        // reuse existing node
                         self.current_node_key = child_key;
                         self.mount_nodes.insert(child_key);
                         self.child_idx_stack.push(0);
                     } else {
+                        // replace existing node
                         let node_key = self.nodes.insert(Node {
                             scope: scope_id,
                             data: None,
@@ -205,6 +206,7 @@ where
                         self.child_idx_stack.push(0);
                     }
                 } else {
+                    // append new node
                     let node_key = self.nodes.insert(Node {
                         scope: scope_id,
                         data: None,
@@ -222,7 +224,6 @@ where
             }
         } else {
             // first compose
-            let parent_node_key = self.current_node_key;
             let node_key = self.nodes.insert(Node {
                 scope: scope_id,
                 data: None,
@@ -236,7 +237,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn end_node(&mut self) {
+    pub(crate) fn end_node(&mut self, parent_node_key: NodeKey) {
         let child_count = self.child_idx_stack.pop().unwrap();
         let node = &mut self.nodes[self.current_node_key];
         let old_child_count = node.children.len();
@@ -247,17 +248,16 @@ where
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {
             *parent_child_count += 1;
         }
-        self.current_node_key = node.parent;
+        self.current_node_key = parent_node_key;
     }
 
     #[inline(always)]
-    pub(crate) fn skip_node(&mut self) {
+    pub(crate) fn skip_node(&mut self, parent_node_key: NodeKey) {
         let _ = self.child_idx_stack.pop().unwrap();
-        let node = &mut self.nodes[self.current_node_key];
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {
             *parent_child_count += 1;
         }
-        self.current_node_key = node.parent;
+        self.current_node_key = parent_node_key;
     }
 }
 

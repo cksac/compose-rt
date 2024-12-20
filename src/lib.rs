@@ -18,15 +18,3 @@ pub use scope::{AnyData, Root, Scope, ScopeId};
 pub mod utils;
 
 mod map;
-
-#[cfg(feature = "compact_scope_id")]
-const ANCHOR: Loc = Loc::new();
-
-#[cfg(feature = "compact_scope_id")]
-#[track_caller]
-#[inline(always)]
-pub(crate) fn offset_to_anchor() -> i64 {
-    let anchor = ANCHOR.id() as i64;
-    let loc = Loc::new().id() as i64;
-    anchor - loc
-}

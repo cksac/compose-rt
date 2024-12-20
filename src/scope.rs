@@ -8,7 +8,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::{Node, NodeKey};
-use crate::{ComposeNode, Composer, State, StateId};
+use crate::{ComposeNode, Composer, Loc, State, StateId};
 
 pub struct Scope<S, N>
 where
@@ -66,6 +66,7 @@ where
         F: Fn() -> T + 'static,
     {
         let mut c = self.composer.write();
+        let c = c.deref_mut();
         let current_node_key = c.current_node_key;
         let id = StateId::new(current_node_key);
         let scope_states = c.states.entry(current_node_key).or_default();
@@ -102,18 +103,19 @@ where
         let parent_scope = *self;
         let composable = move || {
             let mut current_scope = child_scope;
-            let (current_node_key, is_dirty) = {
+            let (parent_node_key, current_node_key, is_dirty) = {
                 let mut c = parent_scope.composer.write();
                 let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
                     current_scope.set_key(key);
                 }
-                c.start_node(current_scope.id);
+                let parent_node_key = c.current_node_key;
+                c.start_node(parent_node_key, current_scope.id);
                 let current_node_key = c.current_node_key;
                 let is_visited = c.composables.contains_key(&current_node_key);
                 let is_dirty = c.dirty_nodes.contains(&current_node_key);
                 if !is_dirty && is_visited {
-                    c.skip_node();
+                    c.skip_node(parent_node_key);
                     return current_node_key;
                 }
                 update_node(
@@ -124,7 +126,7 @@ where
                     &factory,
                     &update,
                 );
-                (current_node_key, is_dirty)
+                (parent_node_key, current_node_key, is_dirty)
             };
             content(current_scope);
             let mut c = parent_scope.composer.write();
@@ -132,7 +134,7 @@ where
             if is_dirty {
                 c.dirty_nodes.remove(&current_node_key);
             }
-            c.end_node();
+            c.end_node(parent_node_key);
             current_node_key
         };
         let current_node_key = composable();
@@ -226,19 +228,17 @@ where
     }
 }
 
-#[cfg(not(feature = "compact_scope_id"))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
-    pub loc: crate::Loc,
+    pub loc: Loc,
     pub key: usize,
 }
 
-#[cfg(not(feature = "compact_scope_id"))]
 impl ScopeId {
     #[track_caller]
     #[inline(always)]
     pub fn new() -> Self {
-        let loc = crate::Loc::new();
+        let loc = Loc::new();
         Self { loc, key: 0 }
     }
 
@@ -253,43 +253,9 @@ impl ScopeId {
     }
 }
 
-#[cfg(not(feature = "compact_scope_id"))]
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} - {}", self.loc, self.key)
-    }
-}
-
-#[cfg(feature = "compact_scope_id")]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScopeId(u64);
-
-#[cfg(feature = "compact_scope_id")]
-impl ScopeId {
-    #[track_caller]
-    #[inline(always)]
-    pub fn new() -> Self {
-        let offset = (crate::offset_to_anchor() << 32) as u64;
-        Self(offset)
-    }
-
-    #[inline(always)]
-    pub fn set_key(&mut self, key: usize) {
-        self.0 = (self.0 & 0xFFFFFFFF00000000) + key as u64;
-    }
-
-    #[inline(always)]
-    pub fn get_key(&self) -> usize {
-        (self.0 & 0x00000000FFFFFFFF) as usize
-    }
-}
-
-#[cfg(feature = "compact_scope_id")]
-impl Debug for ScopeId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let offset = (self.0 >> 32) as u32;
-        let key = self.get_key();
-        write!(f, "{} - {}", offset, key)
+        write!(f, "{:?}|{}", self.loc, self.key)
     }
 }
 

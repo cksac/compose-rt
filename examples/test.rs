@@ -77,8 +77,11 @@ where
 #[track_caller]
 fn inner_component(s: Scope<Container>) {
     s.container(move |s| {
-        s.leaf();
-        s.leaf();
+        for i in 0..3 {
+            s.key(i, |s| {
+                s.leaf();
+            });
+        }
     });
 }
 
