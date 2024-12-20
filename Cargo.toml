@@ -11,6 +11,11 @@ readme = "README.md"
 repository = "https://github.com/cksac/compose-rt"
 homepage = "https://github.com/cksac/compose-rt"
 
+
+[features]
+default = []
+compact_scope_id = []
+
 [dependencies]
 generational-box = "0.5"
 rustc-hash = "2.1"

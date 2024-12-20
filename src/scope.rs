@@ -8,7 +8,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::{Node, NodeKey};
-use crate::{ComposeNode, Composer, Loc, State, StateId};
+use crate::{ComposeNode, Composer, State, StateId};
 
 pub struct Scope<S, N>
 where
@@ -226,17 +226,19 @@ where
     }
 }
 
+#[cfg(not(feature = "compact_scope_id"))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
-    pub loc: Loc,
+    pub loc: crate::Loc,
     pub key: usize,
 }
 
+#[cfg(not(feature = "compact_scope_id"))]
 impl ScopeId {
     #[track_caller]
     #[inline(always)]
     pub fn new() -> Self {
-        let loc = Loc::new();
+        let loc = crate::Loc::new();
         Self { loc, key: 0 }
     }
 
@@ -251,9 +253,43 @@ impl ScopeId {
     }
 }
 
+#[cfg(not(feature = "compact_scope_id"))]
 impl Debug for ScopeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?} - {}", self.loc, self.key)
+    }
+}
+
+#[cfg(feature = "compact_scope_id")]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopeId(u64);
+
+#[cfg(feature = "compact_scope_id")]
+impl ScopeId {
+    #[track_caller]
+    #[inline(always)]
+    pub fn new() -> Self {
+        let offset = (crate::offset_to_anchor() << 32) as u64;
+        Self(offset)
+    }
+
+    #[inline(always)]
+    pub fn set_key(&mut self, key: usize) {
+        self.0 = (self.0 & 0xFFFFFFFF00000000) + key as u64;
+    }
+
+    #[inline(always)]
+    pub fn get_key(&self) -> usize {
+        (self.0 & 0x00000000FFFFFFFF) as usize
+    }
+}
+
+#[cfg(feature = "compact_scope_id")]
+impl Debug for ScopeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let offset = (self.0 >> 32) as u32;
+        let key = self.get_key();
+        write!(f, "{} - {}", offset, key)
     }
 }
 
