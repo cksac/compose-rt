@@ -270,6 +270,7 @@ where
             .field("nodes", &self.nodes)
             .field("states", &self.states)
             .field("dirty_states", &self.dirty_states)
+            .field("used_by", &self.used_by)
             .finish()
     }
 }

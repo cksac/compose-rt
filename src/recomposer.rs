@@ -174,6 +174,7 @@ where
             .field("nodes", &c.nodes)
             .field("states", &c.states)
             .field("dirty_states", &c.dirty_states)
+            .field("used_by", &c.used_by)
             .finish()
     }
 }
