@@ -131,6 +131,22 @@ where
     }
 
     #[inline(always)]
+    pub fn with_root_state<F, T>(&self, func: F) -> T
+    where
+        F: Fn(&S) -> T,
+    {
+        self.root_state.with_untracked(func)
+    }
+
+    #[inline(always)]
+    pub fn with_root_state_mut<F, T>(&mut self, func: F) -> T
+    where
+        F: Fn(&mut S) -> T,
+    {
+        self.root_state.with_mut_untracked(func)
+    }
+
+    #[inline(always)]
     pub fn print_tree(&self)
     where
         N: Debug,

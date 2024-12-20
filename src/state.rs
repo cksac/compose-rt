@@ -58,6 +58,37 @@ where
         func(state)
     }
 
+    pub fn with_mut<F, U>(&self, func: F) -> U
+    where
+        F: Fn(&mut T) -> U,
+    {
+        let mut c = self.composer.write();
+        let c = c.deref_mut();
+        let current_node_key = c.current_node_key;
+        let used_by = c.used_by.entry(self.id).or_default();
+        used_by.insert(current_node_key);
+        let uses = c.uses.entry(current_node_key).or_default();
+        uses.insert(self.id);
+        let scope_states = c.states.get_mut(&self.id.node_key).unwrap();
+        let any_state = scope_states.get_mut(&self.id).unwrap();
+        let state = any_state.downcast_mut::<T>().unwrap();
+        c.dirty_states.insert(self.id);
+        func(state)
+    }
+
+    pub fn with_mut_untracked<F, U>(&self, func: F) -> U
+    where
+        F: Fn(&mut T) -> U,
+    {
+        let mut c = self.composer.write();
+        let c = c.deref_mut();
+        let scope_states = c.states.get_mut(&self.id.node_key).unwrap();
+        let any_state = scope_states.get_mut(&self.id).unwrap();
+        let state = any_state.downcast_mut::<T>().unwrap();
+        c.dirty_states.insert(self.id);
+        func(state)
+    }
+
     pub fn get(&self) -> T
     where
         T: Clone,
