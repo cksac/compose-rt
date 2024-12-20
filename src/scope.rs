@@ -15,7 +15,7 @@ where
     N: ComposeNode,
 {
     pub id: ScopeId,
-    composer: GenerationalBox<Composer<N>>,
+    pub(crate) composer: GenerationalBox<Composer<N>>,
     ty: PhantomData<S>,
 }
 
@@ -95,7 +95,7 @@ where
     ) where
         T: 'static,
         C: Fn(Scope<T, N>) + Clone + 'static,
-        I: Fn(&mut N::Context) -> A + Clone + 'static,
+        I: Fn() -> A + Clone + 'static,
         A: 'static,
         F: Fn(A, &mut N::Context) -> N + Clone + 'static,
         U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
@@ -105,7 +105,6 @@ where
             let mut current_scope = child_scope;
             let (parent_node_key, current_node_key, is_dirty) = {
                 let mut c = parent_scope.composer.write();
-                let c = c.deref_mut();
                 if let Some(key) = c.key_stack.last().copied() {
                     current_scope.set_key(key);
                 }
@@ -118,11 +117,15 @@ where
                     c.skip_node(parent_node_key);
                     return current_node_key;
                 }
+                drop(c);
+                let args = input();
+                let mut c = parent_scope.composer.write();
+                let c = c.deref_mut();
                 update_node(
                     current_node_key,
                     &mut c.context,
                     &mut c.nodes,
-                    &input,
+                    args,
                     &factory,
                     &update,
                 );
@@ -155,7 +158,7 @@ where
     ) where
         T: 'static,
         C: Fn(Scope<T, N>) + Clone + 'static,
-        I: Fn(&mut N::Context) -> A + Clone + 'static,
+        I: Fn() -> A + Clone + 'static,
         A: 'static,
         N: AnyData<E>,
         E: 'static,
@@ -181,21 +184,19 @@ where
 // workaround of borrowing both context and nodes from Composer
 // https://smallcultfollowing.com/babysteps/blog/2018/11/01/after-nll-interprocedural-conflicts/
 #[inline(always)]
-fn update_node<N, I, A, F, U>(
+fn update_node<N, A, F, U>(
     node_key: NodeKey,
     context: &mut N::Context,
     nodes: &mut Slab<Node<N>>,
-    input: &I,
+    args: A,
     factory: &F,
     update: &U,
 ) where
     N: ComposeNode,
-    I: Fn(&mut N::Context) -> A + Clone + 'static,
     A: 'static,
     F: Fn(A, &mut N::Context) -> N + Clone + 'static,
     U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
 {
-    let args = input(context);
     let node = nodes.get_mut(node_key).unwrap();
     if let Some(data) = node.data.as_mut() {
         update(data, args, context);

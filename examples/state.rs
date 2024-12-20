@@ -46,14 +46,14 @@ where
     {
         let child_scope = self.child::<Container>();
         let node = Node::new(Loc::new());
-        self.create_node(child_scope, content, |_| {}, move |_, _| node, |_, _, _| {});
+        self.create_node(child_scope, content, || {}, move |_, _| node, |_, _, _| {});
     }
 
     #[track_caller]
     fn leaf(&self) {
         let child_scope = self.child::<Left>();
         let node = Node::new(Loc::new());
-        self.create_node(child_scope, |_| {}, |_| {}, move |_, _| node, |_, _, _| {});
+        self.create_node(child_scope, |_| {}, || {}, move |_, _| node, |_, _, _| {});
     }
 }
 

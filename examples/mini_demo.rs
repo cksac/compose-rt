@@ -48,7 +48,7 @@ where
         self.create_node(
             child_scope,
             content,
-            |_| {},
+            || {},
             move |_, c| {
                 *c += 1;
                 node
@@ -64,7 +64,7 @@ where
         self.create_node(
             child_scope,
             |_| {},
-            |_| {},
+            || {},
             move |_, c| {
                 *c += 1;
                 node

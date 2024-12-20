@@ -175,6 +175,7 @@ where
             .field("states", &c.states)
             .field("dirty_states", &c.dirty_states)
             .field("used_by", &c.used_by)
+            .field("composables", &c.composables.keys())
             .finish()
     }
 }

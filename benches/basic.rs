@@ -41,7 +41,7 @@ where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
         let child_scope = self.child::<Div>();
-        self.create_node(child_scope, content, |_| {}, |_, _| Node, |_, _, _| {});
+        self.create_node(child_scope, content, || {}, |_, _| Node, |_, _, _| {});
     }
 
     #[track_caller]
@@ -53,7 +53,7 @@ where
         self.create_node(
             child_scope,
             |_| {},
-            move |_| text.clone().into(),
+            move || text.clone().into(),
             |_, _| Node,
             |_, _, _| {},
         );
@@ -68,7 +68,7 @@ where
         self.create_node(
             child_scope,
             |_| {},
-            move |_| text.clone().into(),
+            move || text.clone().into(),
             |_, _| Node,
             |_, _, _| {},
         );

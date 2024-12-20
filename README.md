@@ -59,7 +59,7 @@ where
         self.create_node(
             child_scope,
             content,
-            |_| {},
+            || {},
             |_, _| Node::new("div"),
             |_, _, _| {},
         );
@@ -73,7 +73,7 @@ where
         let child_scope = self.child::<Button>();
         self.create_node(
             child_scope,
-            |_| {},
+            || {},
             move |_| text.clone().into(),
             |text, _| Node::new(format!("button({})", text)),
             |_, _, _| {},
@@ -88,7 +88,7 @@ where
         let child_scope = self.child::<Text>();
         self.create_node(
             child_scope,
-            |_| {},
+            || {},
             move |_| text.clone().into(),
             |text, _| Node::new(format!("text({})", text)),
             |_, _, _| {},
