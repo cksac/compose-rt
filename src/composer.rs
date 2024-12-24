@@ -37,25 +37,27 @@ pub trait ComposeNode: 'static {
     type Context;
     type Data;
 
+    fn new(scope_id: ScopeId, parent: NodeKey) -> Self;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn new(scope_id: ScopeId, parent: NodeKey) -> Self;
     fn scope_id(&self) -> ScopeId;
+    fn set_scope_id(&mut self, scope_id: ScopeId);
+
     fn parent(&self) -> NodeKey;
+    fn set_parent(&mut self, parent: NodeKey);
 
     fn data(&self) -> Option<&Self::Data>;
     fn data_mut(&mut self) -> Option<&mut Self::Data>;
     fn set_data(&mut self, data: Self::Data);
 
     fn children(&self) -> &[NodeKey];
+    fn children_mut(&mut self) -> &mut [NodeKey];
     fn children_push(&mut self, node_key: NodeKey);
     fn children_len(&self) -> usize;
     fn children_drain<R>(&mut self, range: R) -> Drain<NodeKey>
     where
         R: RangeBounds<usize>;
-    fn children_get(&self, index: usize) -> Option<NodeKey>;
-    fn children_set(&mut self, index: usize, node_key: NodeKey);
 }
 
 pub trait AnyData<T> {
@@ -220,7 +222,7 @@ where
             if let Some(child_idx) = child_idx {
                 let parent_node = &mut self.nodes[parent_node_key];
                 if child_idx < parent_node.children_len() {
-                    let child_key = parent_node.children_get(child_idx).unwrap();
+                    let child_key = parent_node.children()[child_idx];
                     let child_node = &mut self.nodes[child_key];
                     if child_node.scope_id() == scope_id {
                         // reuse existing node
@@ -230,7 +232,7 @@ where
                     } else {
                         // replace existing node
                         let node_key = self.nodes.insert(N::new(scope_id, parent_node_key));
-                        self.nodes[parent_node_key].children_set(child_idx, node_key);
+                        self.nodes[parent_node_key].children_mut()[child_idx] = node_key;
                         self.unmount_nodes.insert(child_key);
                         self.mount_nodes.insert(node_key);
                         self.current_node_key = node_key;
