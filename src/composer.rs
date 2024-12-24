@@ -200,6 +200,11 @@ where
     }
 
     #[inline(always)]
+    pub fn root_node_key(&self) -> NodeKey {
+        self.root_node_key
+    }
+
+    #[inline(always)]
     pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
         let parent_node_key = 0;
         let node_key = self.nodes.insert(Node::new(scope_id, parent_node_key));
