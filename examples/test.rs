@@ -13,6 +13,13 @@ impl Data {
     }
 }
 
+impl Default for Data {
+    #[track_caller]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Debug for Data {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, " {:?} ", self.0)

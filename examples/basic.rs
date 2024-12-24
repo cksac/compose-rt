@@ -1,7 +1,7 @@
 use std::env;
 
 use compose_rt::node::{Node, NodeData};
-use compose_rt::{Composer, NodeKey, Root, ScopeId};
+use compose_rt::{Composer, Root};
 
 #[derive(Debug)]
 pub struct Data(String);
@@ -72,7 +72,9 @@ where
             |_| {},
             move || text.clone().into(),
             |text, _| format!("button({})", text).into(),
-            |_, _, _| {},
+            |n, text, _| {
+                n.0 = text;
+            },
         );
     }
 
@@ -87,7 +89,9 @@ where
             |_| {},
             move || text.clone().into(),
             |text, _| format!("text({})", text).into(),
-            |_, _, _| {},
+            |n, text, _| {
+                n.0 = text;
+            },
         );
     }
 }
@@ -142,6 +146,5 @@ fn main() {
     if print {
         recomposer.print_tree();
     }
-    //println!("{:#?}", recomposer);
     println!("Time: {:?}", start.elapsed());
 }

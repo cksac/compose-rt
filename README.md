@@ -11,22 +11,29 @@ A positional memoization runtime similar to Jetpack Compose Runtime.
 ```rust
 use std::env;
 
-use compose_rt::{ComposeNode, Composer, Root};
+use compose_rt::node::{Node, NodeData};
+use compose_rt::{Composer, Root};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Node(String);
+#[derive(Debug)]
+pub struct Data(String);
 
-impl Node {
-    fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+impl From<String> for Data {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
-impl ComposeNode for Node {
+impl From<&str> for Data {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl NodeData for Data {
     type Context = ();
 }
 
-type Scope<S> = compose_rt::Scope<S, Node>;
+type Scope<S> = compose_rt::Scope<S, Node<Data>>;
 
 pub struct Div;
 pub struct Button;
@@ -60,7 +67,7 @@ where
             child_scope,
             content,
             || {},
-            |_, _| Node::new("div"),
+            |_, _| "div".into(),
             |_, _, _| {},
         );
     }
@@ -73,10 +80,12 @@ where
         let child_scope = self.child::<Button>();
         self.create_node(
             child_scope,
-            || {},
-            move |_| text.clone().into(),
-            |text, _| Node::new(format!("button({})", text)),
-            |_, _, _| {},
+            |_| {},
+            move || text.clone().into(),
+            |text, _| format!("button({})", text).into(),
+            |n, text, _| {
+                n.0 = text;
+            },
         );
     }
 
@@ -88,10 +97,12 @@ where
         let child_scope = self.child::<Text>();
         self.create_node(
             child_scope,
-            || {},
-            move |_| text.clone().into(),
-            |text, _| Node::new(format!("text({})", text)),
-            |_, _, _| {},
+            |_| {},
+            move || text.clone().into(),
+            |text, _| format!("text({})", text).into(),
+            |n, text, _| {
+                n.0 = text;
+            },
         );
     }
 }
@@ -107,7 +118,7 @@ fn app(s: Scope<Root>, n: usize) {
                 count.set(n);
             } else {
                 for i in 0..c {
-                    s.key(i as u32, move |s| {
+                    s.key(i, move |s| {
                         s.button(format!("Item {}", i));
                     });
                 }
@@ -134,8 +145,12 @@ fn main() {
         .unwrap_or("true".to_string())
         .parse()
         .unwrap();
+    println!("count: {}, iter: {}, print: {}", count, iter, print);
     let start = std::time::Instant::now();
     let mut recomposer = Composer::compose(move |s| app(s, count), ());
+    if print {
+        recomposer.print_tree();
+    }
     for _ in 0..iter {
         recomposer.recompose();
     }

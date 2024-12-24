@@ -110,7 +110,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| Button { label: text.into() },
+            |text, _| Button { label: text },
             |_, _, _| {},
         );
     }
@@ -125,7 +125,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| Text { label: text.into() },
+            |text, _| Text { label: text },
             |_, _, _| {},
         );
     }
