@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::fmt::{self, Debug, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -7,7 +6,7 @@ use std::ops::DerefMut;
 use generational_box::GenerationalBox;
 use slab::Slab;
 
-use crate::composer::{Node, NodeKey};
+use crate::composer::NodeKey;
 use crate::{ComposeNode, Composer, Loc, State, StateId};
 
 pub struct Scope<S, N>
@@ -97,8 +96,8 @@ where
         C: Fn(Scope<T, N>) + Clone + 'static,
         I: Fn() -> A + Clone + 'static,
         A: 'static,
-        F: Fn(A, &mut N::Context) -> N + Clone + 'static,
-        U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
+        F: Fn(A, &mut N::Context) -> N::Data + Clone + 'static,
+        U: Fn(&mut N::Data, A, &mut N::Context) + Clone + 'static,
     {
         let parent_scope = *self;
         let composable = move || {
@@ -147,38 +146,38 @@ where
             .or_insert_with(|| Box::new(composable));
     }
 
-    #[inline(always)]
-    pub fn create_any_node<C, T, I, A, E, F, U>(
-        &self,
-        child_scope: Scope<T, N>,
-        content: C,
-        input: I,
-        factory: F,
-        update: U,
-    ) where
-        T: 'static,
-        C: Fn(Scope<T, N>) + Clone + 'static,
-        I: Fn() -> A + Clone + 'static,
-        A: 'static,
-        N: AnyData<E>,
-        E: 'static,
-        F: Fn(A, &mut N::Context) -> E + Clone + 'static,
-        U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
-    {
-        self.create_node(
-            child_scope,
-            content,
-            input,
-            move |args, ctx| {
-                let e = factory(args, ctx);
-                AnyData::new(e)
-            },
-            move |n, args, ctx| {
-                let e = n.value_mut();
-                update(e, args, ctx);
-            },
-        );
-    }
+    // #[inline(always)]
+    // pub fn create_any_node<C, T, I, A, E, F, U>(
+    //     &self,
+    //     child_scope: Scope<T, N>,
+    //     content: C,
+    //     input: I,
+    //     factory: F,
+    //     update: U,
+    // ) where
+    //     T: 'static,
+    //     C: Fn(Scope<T, N>) + Clone + 'static,
+    //     I: Fn() -> A + Clone + 'static,
+    //     A: 'static,
+    //     N: AnyData<E>,
+    //     E: 'static,
+    //     F: Fn(A, &mut N::Context) -> E + Clone + 'static,
+    //     U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
+    // {
+    //     self.create_node(
+    //         child_scope,
+    //         content,
+    //         input,
+    //         move |args, ctx| {
+    //             let e = factory(args, ctx);
+    //             AnyData::new(e)
+    //         },
+    //         move |n, args, ctx| {
+    //             let e = n.value_mut();
+    //             update(e, args, ctx);
+    //         },
+    //     );
+    // }
 }
 
 // workaround of borrowing both context and nodes from Composer
@@ -187,45 +186,22 @@ where
 fn update_node<N, A, F, U>(
     node_key: NodeKey,
     context: &mut N::Context,
-    nodes: &mut Slab<Node<N>>,
+    nodes: &mut Slab<N>,
     args: A,
     factory: &F,
     update: &U,
 ) where
     N: ComposeNode,
     A: 'static,
-    F: Fn(A, &mut N::Context) -> N + Clone + 'static,
-    U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
+    F: Fn(A, &mut N::Context) -> N::Data + Clone + 'static,
+    U: Fn(&mut N::Data, A, &mut N::Context) + Clone + 'static,
 {
     let node = nodes.get_mut(node_key).unwrap();
-    if let Some(data) = node.data.as_mut() {
+    if let Some(data) = node.data_mut() {
         update(data, args, context);
     } else {
         let data = factory(args, context);
-        node.data = Some(data);
-    }
-}
-
-pub trait AnyData<T> {
-    fn new(val: T) -> Self;
-    fn value(&self) -> &T;
-    fn value_mut(&mut self) -> &mut T;
-}
-
-impl<T> AnyData<T> for Box<dyn Any>
-where
-    T: 'static,
-{
-    fn new(val: T) -> Self {
-        Box::new(val)
-    }
-
-    fn value(&self) -> &T {
-        self.downcast_ref::<T>().unwrap()
-    }
-
-    fn value_mut(&mut self) -> &mut T {
-        self.downcast_mut::<T>().unwrap()
+        node.set_data(data);
     }
 }
 

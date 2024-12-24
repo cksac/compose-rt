@@ -13,8 +13,10 @@ mod state;
 pub use state::{State, StateId};
 
 mod scope;
-pub use scope::{AnyData, Root, Scope, ScopeId};
+pub use scope::{Root, Scope, ScopeId};
 
 pub mod utils;
 
 mod map;
+
+pub mod node;

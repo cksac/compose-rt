@@ -1,14 +1,9 @@
 use std::hint::black_box;
 
-use compose_rt::{ComposeNode, Composer, Root};
+use compose_rt::{ComposeNode, Composer, NodeKey, Root, ScopeId};
 use criterion::{criterion_group, criterion_main, Criterion};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Node;
-
-impl ComposeNode for Node {
-    type Context = ();
-}
+type Node = compose_rt::node::Node<()>;
 
 type Scope<S> = compose_rt::Scope<S, Node>;
 
@@ -41,7 +36,7 @@ where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
         let child_scope = self.child::<Div>();
-        self.create_node(child_scope, content, || {}, |_, _| Node, |_, _, _| {});
+        self.create_node(child_scope, content, || {}, |_, _| {}, |_, _, _| {});
     }
 
     #[track_caller]
@@ -54,7 +49,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |_, _| Node,
+            |_, _| {},
             |_, _, _| {},
         );
     }
@@ -69,7 +64,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |_, _| Node,
+            |_, _| {},
             |_, _, _| {},
         );
     }

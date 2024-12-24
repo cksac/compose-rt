@@ -1,19 +1,28 @@
 use std::env;
 
-use compose_rt::{ComposeNode, Composer, Root};
+use compose_rt::node::NodeData;
+use compose_rt::{ComposeNode, Composer, NodeKey, Root, ScopeId};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Node(String);
+#[derive(Debug)]
+pub struct Data(String);
 
-impl Node {
-    fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+impl From<String> for Data {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
-impl ComposeNode for Node {
+impl From<&str> for Data {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl NodeData for Data {
     type Context = ();
 }
+
+type Node = compose_rt::node::Node<Data>;
 
 type Scope<S> = compose_rt::Scope<S, Node>;
 
@@ -49,7 +58,7 @@ where
             child_scope,
             content,
             || {},
-            |_, _| Node::new("div"),
+            |_, _| "div".into(),
             |_, _, _| {},
         );
     }
@@ -64,7 +73,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| Node::new(format!("button({})", text)),
+            |text, _| format!("button({})", text).into(),
             |_, _, _| {},
         );
     }
@@ -79,7 +88,7 @@ where
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| Node::new(format!("text({})", text)),
+            |text, _| format!("text({})", text).into(),
             |_, _, _| {},
         );
     }
