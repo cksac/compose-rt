@@ -58,6 +58,32 @@ pub trait ComposeNode: 'static {
     fn children_set(&mut self, index: usize, node_key: NodeKey);
 }
 
+pub trait AnyData<T> {
+    fn new(val: T) -> Self;
+    fn value(&self) -> &T;
+    fn value_mut(&mut self) -> &mut T;
+}
+
+impl<T> AnyData<T> for Box<dyn Any>
+where
+    T: 'static,
+{
+    #[inline(always)]
+    fn new(val: T) -> Self {
+        Box::new(val)
+    }
+
+    #[inline(always)]
+    fn value(&self) -> &T {
+        self.downcast_ref::<T>().unwrap()
+    }
+
+    #[inline(always)]
+    fn value_mut(&mut self) -> &mut T {
+        self.downcast_mut::<T>().unwrap()
+    }
+}
+
 pub type NodeKey = usize;
 
 pub struct Composer<N>

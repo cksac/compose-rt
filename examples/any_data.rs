@@ -1,32 +1,77 @@
+use std::any::Any;
 use std::env;
+use std::fmt::Debug;
 
 use compose_rt::node::{Node, NodeData};
-use compose_rt::{Composer, NodeKey, Root, ScopeId};
+use compose_rt::{AnyData, Composer, Root};
 
-#[derive(Debug)]
-pub struct Data(String);
+pub trait Data: Debug + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
 
-impl From<String> for Data {
-    fn from(s: String) -> Self {
-        Self(s)
+impl<T> AnyData<T> for Box<dyn Data>
+where
+    T: Data,
+{
+    fn new(val: T) -> Self {
+        Box::new(val)
+    }
+
+    fn value(&self) -> &T {
+        self.as_any().downcast_ref::<T>().unwrap()
+    }
+
+    fn value_mut(&mut self) -> &mut T {
+        self.as_any_mut().downcast_mut::<T>().unwrap()
     }
 }
 
-impl From<&str> for Data {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-impl NodeData for Data {
+impl NodeData for Box<dyn Data> {
     type Context = ();
 }
 
-type Scope<S> = compose_rt::Scope<S, Node<Data>>;
+type Scope<S> = compose_rt::Scope<S, Node<Box<dyn Data>>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Div;
-pub struct Button;
-pub struct Text;
+impl Data for Div {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Button {
+    label: String,
+}
+impl Data for Button {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Text {
+    label: String,
+}
+impl Data for Text {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 pub trait Html {
     fn div<C>(&self, content: C)
@@ -52,13 +97,7 @@ where
         C: Fn(Scope<Div>) + Clone + 'static,
     {
         let child_scope = self.child::<Div>();
-        self.create_node(
-            child_scope,
-            content,
-            || {},
-            |_, _| "div".into(),
-            |_, _, _| {},
-        );
+        self.create_any_node(child_scope, content, || {}, |_, _| Div, |_, _, _| {});
     }
 
     #[track_caller]
@@ -67,11 +106,11 @@ where
         T: Into<String> + Clone + 'static,
     {
         let child_scope = self.child::<Button>();
-        self.create_node(
+        self.create_any_node(
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| format!("button({})", text).into(),
+            |text, _| Button { label: text.into() },
             |_, _, _| {},
         );
     }
@@ -82,11 +121,11 @@ where
         T: Into<String> + Clone + 'static,
     {
         let child_scope = self.child::<Text>();
-        self.create_node(
+        self.create_any_node(
             child_scope,
             |_| {},
             move || text.clone().into(),
-            |text, _| format!("text({})", text).into(),
+            |text, _| Text { label: text.into() },
             |_, _, _| {},
         );
     }

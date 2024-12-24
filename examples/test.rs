@@ -1,27 +1,29 @@
 use std::fmt::Debug;
 
-use compose_rt::{ComposeNode, Composer, Loc, Root};
+use compose_rt::node::{Node, NodeData};
+use compose_rt::{Composer, Loc, Root};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Node(Loc);
+pub struct Data(Loc);
 
-impl Node {
-    fn new(loc: Loc) -> Self {
-        Self(loc)
+impl Data {
+    #[track_caller]
+    pub fn new() -> Self {
+        Self(Loc::new())
     }
 }
 
-impl Debug for Node {
+impl Debug for Data {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, " {:?} ", self.0)
     }
 }
 
-impl ComposeNode for Node {
+impl NodeData for Data {
     type Context = usize;
 }
 
-type Scope<S> = compose_rt::Scope<S, Node>;
+type Scope<S> = compose_rt::Scope<S, Node<Data>>;
 
 pub struct Container;
 pub struct Left;
@@ -44,14 +46,14 @@ where
         C: Fn(Scope<Container>) + Clone + 'static,
     {
         let child_scope = self.child::<Container>();
-        let node = Node::new(Loc::new());
+        let data = Data::new();
         self.create_node(
             child_scope,
             content,
             || {},
             move |_, c| {
                 *c += 1;
-                node
+                data
             },
             |_, _, _| {},
         );
@@ -60,14 +62,14 @@ where
     #[track_caller]
     fn leaf(&self) {
         let child_scope = self.child::<Left>();
-        let node = Node::new(Loc::new());
+        let data = Data::new();
         self.create_node(
             child_scope,
             |_| {},
             || {},
             move |_, c| {
                 *c += 1;
-                node
+                data
             },
             |_, _, _| {},
         );

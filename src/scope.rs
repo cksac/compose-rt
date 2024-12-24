@@ -7,7 +7,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::NodeKey;
-use crate::{ComposeNode, Composer, Loc, State, StateId};
+use crate::{AnyData, ComposeNode, Composer, Loc, State, StateId};
 
 pub struct Scope<S, N>
 where
@@ -146,38 +146,38 @@ where
             .or_insert_with(|| Box::new(composable));
     }
 
-    // #[inline(always)]
-    // pub fn create_any_node<C, T, I, A, E, F, U>(
-    //     &self,
-    //     child_scope: Scope<T, N>,
-    //     content: C,
-    //     input: I,
-    //     factory: F,
-    //     update: U,
-    // ) where
-    //     T: 'static,
-    //     C: Fn(Scope<T, N>) + Clone + 'static,
-    //     I: Fn() -> A + Clone + 'static,
-    //     A: 'static,
-    //     N: AnyData<E>,
-    //     E: 'static,
-    //     F: Fn(A, &mut N::Context) -> E + Clone + 'static,
-    //     U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
-    // {
-    //     self.create_node(
-    //         child_scope,
-    //         content,
-    //         input,
-    //         move |args, ctx| {
-    //             let e = factory(args, ctx);
-    //             AnyData::new(e)
-    //         },
-    //         move |n, args, ctx| {
-    //             let e = n.value_mut();
-    //             update(e, args, ctx);
-    //         },
-    //     );
-    // }
+    #[inline(always)]
+    pub fn create_any_node<C, T, I, A, E, F, U>(
+        &self,
+        child_scope: Scope<T, N>,
+        content: C,
+        input: I,
+        factory: F,
+        update: U,
+    ) where
+        T: 'static,
+        C: Fn(Scope<T, N>) + Clone + 'static,
+        I: Fn() -> A + Clone + 'static,
+        A: 'static,
+        N::Data: AnyData<E>,
+        E: 'static,
+        F: Fn(A, &mut N::Context) -> E + Clone + 'static,
+        U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
+    {
+        self.create_node(
+            child_scope,
+            content,
+            input,
+            move |args, ctx| {
+                let e = factory(args, ctx);
+                AnyData::new(e)
+            },
+            move |n, args, ctx| {
+                let e = n.value_mut();
+                update(e, args, ctx);
+            },
+        );
+    }
 }
 
 // workaround of borrowing both context and nodes from Composer

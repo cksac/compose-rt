@@ -1,11 +1,10 @@
 use std::hint::black_box;
 
-use compose_rt::{ComposeNode, Composer, NodeKey, Root, ScopeId};
+use compose_rt::node::Node;
+use compose_rt::{Composer, Root};
 use criterion::{criterion_group, criterion_main, Criterion};
 
-type Node = compose_rt::node::Node<()>;
-
-type Scope<S> = compose_rt::Scope<S, Node>;
+type Scope<S> = compose_rt::Scope<S, Node<()>>;
 
 pub struct Div;
 pub struct Button;
