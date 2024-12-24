@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
-use compose_rt::node::{Node, NodeData};
-use compose_rt::{Composer, Loc, Root};
+use compose_rt::{ComposeNode, Composer, Loc, Root};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Data(Loc);
@@ -26,12 +25,12 @@ impl Debug for Data {
     }
 }
 
-impl NodeData for Data {
+impl ComposeNode for Data {
     type Context = ();
 }
 
-type Scope<S> = compose_rt::Scope<S, Node<Data>>;
-type State<T> = compose_rt::State<T, Node<Data>>;
+type Scope<S> = compose_rt::Scope<S, Data>;
+type State<T> = compose_rt::State<T, Data>;
 
 pub struct Container;
 pub struct Left;

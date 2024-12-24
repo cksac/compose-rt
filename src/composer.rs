@@ -1,7 +1,5 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::ops::RangeBounds;
-use std::vec::Drain;
 
 use generational_box::{AnyStorage, UnsyncStorage};
 use slab::Slab;
@@ -35,29 +33,10 @@ impl Clone for Box<dyn Composable> {
 
 pub trait ComposeNode: 'static {
     type Context;
-    type Data;
+}
 
-    fn new(scope_id: ScopeId, parent: NodeKey) -> Self;
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    fn scope_id(&self) -> ScopeId;
-    fn set_scope_id(&mut self, scope_id: ScopeId);
-
-    fn parent(&self) -> NodeKey;
-    fn set_parent(&mut self, parent: NodeKey);
-
-    fn data(&self) -> Option<&Self::Data>;
-    fn data_mut(&mut self) -> Option<&mut Self::Data>;
-    fn set_data(&mut self, data: Self::Data);
-
-    fn children(&self) -> &[NodeKey];
-    fn children_mut(&mut self) -> &mut [NodeKey];
-    fn children_push(&mut self, node_key: NodeKey);
-    fn children_len(&self) -> usize;
-    fn children_drain<R>(&mut self, range: R) -> Drain<NodeKey>
-    where
-        R: RangeBounds<usize>;
+impl ComposeNode for () {
+    type Context = ();
 }
 
 pub trait AnyData<T> {
@@ -88,12 +67,32 @@ where
 
 pub type NodeKey = usize;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Node<T> {
+    pub scope_id: ScopeId,
+    pub parent: NodeKey,
+    pub children: Vec<NodeKey>,
+    pub data: Option<T>,
+}
+
+impl<T> Node<T> {
+    #[inline(always)]
+    pub fn new(scope_id: ScopeId, parent: NodeKey) -> Self {
+        Self {
+            scope_id,
+            parent,
+            children: Vec::new(),
+            data: None,
+        }
+    }
+}
+
 pub struct Composer<N>
 where
     N: ComposeNode,
 {
     pub context: N::Context,
-    pub nodes: Slab<N>,
+    pub nodes: Slab<Node<N>>,
     pub(crate) initialized: bool,
     pub(crate) root_node_key: NodeKey,
     pub(crate) composables: Map<NodeKey, Box<dyn Composable>>,
@@ -203,7 +202,7 @@ where
     #[inline(always)]
     pub(crate) fn start_root(&mut self, scope_id: ScopeId) {
         let parent_node_key = 0;
-        let node_key = self.nodes.insert(N::new(scope_id, parent_node_key));
+        let node_key = self.nodes.insert(Node::new(scope_id, parent_node_key));
         self.child_idx_stack.push(0);
         self.current_node_key = node_key;
     }
@@ -212,7 +211,7 @@ where
     pub(crate) fn end_root(&mut self) {
         let child_count = self.child_idx_stack.pop().unwrap();
         assert_eq!(1, child_count, "Root scope must have exactly one child");
-        self.root_node_key = self.nodes[self.current_node_key].children()[0];
+        self.root_node_key = self.nodes[self.current_node_key].children[0];
     }
 
     #[inline(always)]
@@ -221,18 +220,18 @@ where
             let child_idx = self.child_idx_stack.last().cloned();
             if let Some(child_idx) = child_idx {
                 let parent_node = &mut self.nodes[parent_node_key];
-                if child_idx < parent_node.children_len() {
-                    let child_key = parent_node.children()[child_idx];
+                if child_idx < parent_node.children.len() {
+                    let child_key = parent_node.children[child_idx];
                     let child_node = &mut self.nodes[child_key];
-                    if child_node.scope_id() == scope_id {
+                    if child_node.scope_id == scope_id {
                         // reuse existing node
                         self.current_node_key = child_key;
                         self.mount_nodes.insert(child_key);
                         self.child_idx_stack.push(0);
                     } else {
                         // replace existing node
-                        let node_key = self.nodes.insert(N::new(scope_id, parent_node_key));
-                        self.nodes[parent_node_key].children_mut()[child_idx] = node_key;
+                        let node_key = self.nodes.insert(Node::new(scope_id, parent_node_key));
+                        self.nodes[parent_node_key].children[child_idx] = node_key;
                         self.unmount_nodes.insert(child_key);
                         self.mount_nodes.insert(node_key);
                         self.current_node_key = node_key;
@@ -240,8 +239,8 @@ where
                     }
                 } else {
                     // append new node
-                    let node_key = self.nodes.insert(N::new(scope_id, parent_node_key));
-                    self.nodes[parent_node_key].children_push(node_key);
+                    let node_key = self.nodes.insert(Node::new(scope_id, parent_node_key));
+                    self.nodes[parent_node_key].children.push(node_key);
                     self.mount_nodes.insert(node_key);
                     self.current_node_key = node_key;
                     self.child_idx_stack.push(0);
@@ -252,8 +251,8 @@ where
             }
         } else {
             // first compose
-            let node_key = self.nodes.insert(N::new(scope_id, parent_node_key));
-            self.nodes[parent_node_key].children_push(node_key);
+            let node_key = self.nodes.insert(Node::new(scope_id, parent_node_key));
+            self.nodes[parent_node_key].children.push(node_key);
             self.current_node_key = node_key;
             self.child_idx_stack.push(0);
         }
@@ -263,9 +262,9 @@ where
     pub(crate) fn end_node(&mut self, parent_node_key: NodeKey) {
         let child_count = self.child_idx_stack.pop().unwrap();
         let node = &mut self.nodes[self.current_node_key];
-        let old_child_count = node.children_len();
+        let old_child_count = node.children.len();
         if child_count < old_child_count {
-            let unmount_nodes = node.children_drain(child_count..);
+            let unmount_nodes = node.children.drain(child_count..);
             self.unmount_nodes.extend(unmount_nodes);
         }
         if let Some(parent_child_count) = self.child_idx_stack.last_mut() {

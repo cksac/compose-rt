@@ -7,7 +7,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::NodeKey;
-use crate::{AnyData, ComposeNode, Composer, Loc, State, StateId};
+use crate::{AnyData, ComposeNode, Composer, Loc, Node, State, StateId};
 
 pub struct Scope<S, N>
 where
@@ -96,8 +96,8 @@ where
         C: Fn(Scope<T, N>) + Clone + 'static,
         I: Fn() -> A + Clone + 'static,
         A: 'static,
-        F: Fn(A, &mut N::Context) -> N::Data + Clone + 'static,
-        U: Fn(&mut N::Data, A, &mut N::Context) + Clone + 'static,
+        F: Fn(A, &mut N::Context) -> N + Clone + 'static,
+        U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
     {
         let parent_scope = *self;
         let composable = move || {
@@ -159,7 +159,7 @@ where
         C: Fn(Scope<T, N>) + Clone + 'static,
         I: Fn() -> A + Clone + 'static,
         A: 'static,
-        N::Data: AnyData<E>,
+        N: AnyData<E>,
         E: 'static,
         F: Fn(A, &mut N::Context) -> E + Clone + 'static,
         U: Fn(&mut E, A, &mut N::Context) + Clone + 'static,
@@ -186,22 +186,22 @@ where
 fn update_node<N, A, F, U>(
     node_key: NodeKey,
     context: &mut N::Context,
-    nodes: &mut Slab<N>,
+    nodes: &mut Slab<Node<N>>,
     args: A,
     factory: &F,
     update: &U,
 ) where
     N: ComposeNode,
     A: 'static,
-    F: Fn(A, &mut N::Context) -> N::Data + Clone + 'static,
-    U: Fn(&mut N::Data, A, &mut N::Context) + Clone + 'static,
+    F: Fn(A, &mut N::Context) -> N + Clone + 'static,
+    U: Fn(&mut N, A, &mut N::Context) + Clone + 'static,
 {
     let node = nodes.get_mut(node_key).unwrap();
-    if let Some(data) = node.data_mut() {
+    if let Some(data) = node.data.as_mut() {
         update(data, args, context);
     } else {
         let data = factory(args, context);
-        node.set_data(data);
+        node.data = Some(data);
     }
 }
 

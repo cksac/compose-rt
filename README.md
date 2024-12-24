@@ -11,8 +11,7 @@ A positional memoization runtime similar to Jetpack Compose Runtime.
 ```rust
 use std::env;
 
-use compose_rt::node::{Node, NodeData};
-use compose_rt::{Composer, Root};
+use compose_rt::{ComposeNode, Composer, Root};
 
 #[derive(Debug)]
 pub struct Data(String);
@@ -29,11 +28,11 @@ impl From<&str> for Data {
     }
 }
 
-impl NodeData for Data {
+impl ComposeNode for Data {
     type Context = ();
 }
 
-type Scope<S> = compose_rt::Scope<S, Node<Data>>;
+type Scope<S> = compose_rt::Scope<S, Data>;
 
 pub struct Div;
 pub struct Button;

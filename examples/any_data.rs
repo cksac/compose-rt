@@ -2,8 +2,7 @@ use std::any::Any;
 use std::env;
 use std::fmt::Debug;
 
-use compose_rt::node::{Node, NodeData};
-use compose_rt::{AnyData, Composer, Root};
+use compose_rt::{AnyData, ComposeNode, Composer, Root};
 
 pub trait Data: Debug + 'static {
     fn as_any(&self) -> &dyn Any;
@@ -27,11 +26,11 @@ where
     }
 }
 
-impl NodeData for Box<dyn Data> {
+impl ComposeNode for Box<dyn Data> {
     type Context = ();
 }
 
-type Scope<S> = compose_rt::Scope<S, Node<Box<dyn Data>>>;
+type Scope<S> = compose_rt::Scope<S, Box<dyn Data>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Div;

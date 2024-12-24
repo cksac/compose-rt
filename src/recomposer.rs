@@ -149,7 +149,7 @@ where
     #[inline(always)]
     pub fn print_tree(&self)
     where
-        N::Data: Debug,
+        N: Debug,
     {
         self.print_tree_with(self.root_node_key(), |n| format!("{:?}", n));
     }
@@ -157,7 +157,7 @@ where
     #[inline(always)]
     pub fn print_tree_with<D>(&self, node_key: NodeKey, display_fn: D)
     where
-        D: Fn(Option<&N::Data>) -> String,
+        D: Fn(Option<&N>) -> String,
     {
         let c = self.composer.read();
         utils::print_tree(&c, node_key, display_fn);
