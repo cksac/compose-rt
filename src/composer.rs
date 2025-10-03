@@ -5,6 +5,7 @@ use generational_box::{AnyStorage, UnsyncStorage};
 use slab::Slab;
 
 use crate::map::{HashMapExt, HashSetExt, Map, Set};
+use crate::subcompose::SubcompositionEntry;
 use crate::{Recomposer, Root, Scope, ScopeId, State, StateId};
 
 pub trait Composable {
@@ -106,6 +107,7 @@ where
     pub(crate) dirty_nodes: Set<NodeKey>,
     pub(crate) mount_nodes: Set<NodeKey>,
     pub(crate) unmount_nodes: Set<NodeKey>,
+    pub(crate) subcompositions: Map<NodeKey, SubcompositionEntry>,
 }
 
 impl<N> Composer<N>
@@ -129,6 +131,7 @@ where
             dirty_nodes: Set::new(),
             mount_nodes: Set::new(),
             unmount_nodes: Set::new(),
+            subcompositions: Map::new(),
         }
     }
 
@@ -149,6 +152,7 @@ where
             dirty_nodes: Set::new(),
             mount_nodes: Set::with_capacity(capacity),
             unmount_nodes: Set::new(),
+            subcompositions: Map::with_capacity(capacity),
         }
     }
 

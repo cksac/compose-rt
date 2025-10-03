@@ -50,6 +50,14 @@ where
             .cloned()
             .collect::<Vec<_>>();
         for n in unmount_nodes {
+            c.subcompositions.remove(&n);
+            for entry in c.subcompositions.values_mut() {
+                for slot in entry.slots.values_mut() {
+                    if slot.node_key == Some(n) {
+                        slot.node_key = None;
+                    }
+                }
+            }
             c.composables.remove(&n);
             c.nodes.remove(n);
             if let Some(node_states) = c.states.remove(&n) {

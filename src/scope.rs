@@ -7,6 +7,7 @@ use generational_box::GenerationalBox;
 use slab::Slab;
 
 use crate::composer::NodeKey;
+use crate::subcompose::{SubcomposeRegistry, Subcomposition};
 use crate::{AnyData, ComposeNode, Composer, Loc, Node, State, StateId};
 
 pub struct Scope<S, N>
@@ -82,6 +83,20 @@ where
         self.composer.write().key_stack.push(key);
         content(*self);
         self.composer.write().key_stack.pop();
+    }
+
+    #[track_caller]
+    pub fn subcompose<C>(&self, content: C) -> Subcomposition<N>
+    where
+        C: Fn(SubcomposeRegistry<'_, N>) + Clone + 'static,
+    {
+        let node_key = {
+            let c = self.composer.read();
+            c.current_node_key
+        };
+        let mut host = Subcomposition::new(node_key, self.composer);
+        content(SubcomposeRegistry::new(&mut host));
+        host
     }
 
     pub fn create_node<C, T, I, A, F, U>(

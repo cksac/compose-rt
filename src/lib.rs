@@ -6,6 +6,11 @@ pub use loc::Loc;
 mod composer;
 pub use composer::{AnyData, Composable, ComposeNode, Composer, Node, NodeKey};
 
+mod subcompose;
+pub use subcompose::{
+    SlotId, SubcomposeHandle, SubcomposeRegistry, SubcomposeScope, Subcomposition,
+};
+
 mod recomposer;
 pub use recomposer::Recomposer;
 
