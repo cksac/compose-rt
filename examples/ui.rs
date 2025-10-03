@@ -83,15 +83,15 @@ fn render_button<S: 'static>(scope: UiScope<S>, value: String, modifier: Modifie
         button_scope,
         |_| {},
         move || (display_for_input.clone(), modifier),
-        move |(value, constraint), _| LayoutNode {
+        move |(value, modifier), _| LayoutNode {
             widget: format!("Button(\"{}\")", &value),
             width: text_width(&value),
-            min_width: constraint.min_width,
+            min_width: modifier.min_width,
         },
-        move |node, (value, constraint), _| {
+        move |node, (value, modifier), _| {
             node.widget = format!("Button(\"{}\")", &value);
             node.width = text_width(&value);
-            node.min_width = constraint.min_width;
+            node.min_width = modifier.min_width;
         },
     );
 }
@@ -114,7 +114,7 @@ impl<S: 'static> UiDsl for Ui<S> {
     }
 }
 
-fn resize_min_width<S, C>(scope: UiScope<S>, constraint: Modifier, content: C)
+fn resize_min_width<S, C>(scope: UiScope<S>, modifier: Modifier, content: C)
 where
     S: 'static,
     C: Fn(Modifier, &mut dyn UiDsl) + Clone + 'static,
@@ -124,7 +124,7 @@ where
     let measure_content = content.clone();
     let render_content = content.clone();
     scope.subcompose(move |mut registry| {
-        let mut constraint = constraint;
+        let mut m = modifier;
         metrics.borrow_mut().clear();
         let metrics_for_measure = metrics.clone();
         let measure_content = measure_content.clone();
@@ -136,10 +136,10 @@ where
             move |slot| {
                 let mut runner = Ui::new(slot);
                 let callback = measure_content.clone();
-                callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
+                callback(m.clone(), &mut runner as &mut dyn UiDsl);
             },
         );
-        constraint.min_width = metrics.borrow().iter().copied().max().unwrap_or(0);
+        m.min_width = metrics.borrow().iter().copied().max().unwrap_or(0);
         let render_content = render_content.clone();
         registry.subcompose::<ColumnSlot, _, _>(
             SlotId::from("render"),
@@ -147,7 +147,7 @@ where
             move |slot| {
                 let mut runner = Ui::new(slot);
                 let callback = render_content.clone();
-                callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
+                callback(m.clone(), &mut runner as &mut dyn UiDsl);
             },
         );
     });
