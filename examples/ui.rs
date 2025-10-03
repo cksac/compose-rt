@@ -39,9 +39,9 @@ enum LayoutContext {
 }
 
 trait UiDsl {
-    fn text(&mut self, modifier: Modifier, text: String);
+    fn text(&self, modifier: Modifier, text: String);
 
-    fn button(&mut self, modifier: Modifier, label: String);
+    fn button(&self, modifier: Modifier, label: String);
 }
 
 struct Ui<S> {
@@ -49,144 +49,148 @@ struct Ui<S> {
 }
 
 impl<S: 'static> Ui<S> {
-    fn new(scope: SubcomposeScope<S, LayoutNode, LayoutContext>) -> Self {
+    pub fn new(scope: SubcomposeScope<S, LayoutNode, LayoutContext>) -> Self {
         Self { scope }
     }
+}
 
-    fn render_text(&mut self, value: String, modifier: Modifier) {
-        let scope = self.scope.scope();
-        let text_scope = scope.child::<TextNode>();
-        let display = Rc::new(value);
-        let display_for_input = display.clone();
-        scope.create_node(
-            text_scope,
-            |_| {},
-            move || (display_for_input.clone(), modifier),
-            move |(value, modifier), _| LayoutNode {
-                widget: format!("Text(\"{}\")", &value),
-                width: text_width(&value),
-                min_width: modifier.min_width,
-            },
-            move |node, (value, modifier), _| {
-                node.widget = format!("Text(\"{}\")", &value);
-                node.width = text_width(&value);
-                node.min_width = modifier.min_width;
-            },
-        );
-    }
+fn render_text<S: 'static>(scope: UiScope<S>, value: String, modifier: Modifier) {
+    let text_scope = scope.child::<TextNode>();
+    let display = Rc::new(value);
+    let display_for_input = display.clone();
+    scope.create_node(
+        text_scope,
+        |_| {},
+        move || (display_for_input.clone(), modifier),
+        move |(value, modifier), _| LayoutNode {
+            widget: format!("Text(\"{}\")", &value),
+            width: text_width(&value),
+            min_width: modifier.min_width,
+        },
+        move |node, (value, modifier), _| {
+            node.widget = format!("Text(\"{}\")", &value);
+            node.width = text_width(&value);
+            node.min_width = modifier.min_width;
+        },
+    );
+}
 
-    fn render_button(&mut self, value: String, modifier: Modifier) {
-        let scope = self.scope.scope();
-        let button_scope = scope.child::<ButtonNode>();
-        let display = Rc::new(value);
-        let display_for_input = display.clone();
-        scope.create_node(
-            button_scope,
-            |_| {},
-            move || (display_for_input.clone(), modifier),
-            move |(value, constraint), _| LayoutNode {
-                widget: format!("Button(\"{}\")", &value),
-                width: text_width(&value),
-                min_width: constraint.min_width,
-            },
-            move |node, (value, constraint), _| {
-                node.widget = format!("Button(\"{}\")", &value);
-                node.width = text_width(&value);
-                node.min_width = constraint.min_width;
-            },
-        );
-    }
+fn render_button<S: 'static>(scope: UiScope<S>, value: String, modifier: Modifier) {
+    let button_scope = scope.child::<ButtonNode>();
+    let display = Rc::new(value);
+    let display_for_input = display.clone();
+    scope.create_node(
+        button_scope,
+        |_| {},
+        move || (display_for_input.clone(), modifier),
+        move |(value, constraint), _| LayoutNode {
+            widget: format!("Button(\"{}\")", &value),
+            width: text_width(&value),
+            min_width: constraint.min_width,
+        },
+        move |node, (value, constraint), _| {
+            node.widget = format!("Button(\"{}\")", &value);
+            node.width = text_width(&value);
+            node.min_width = constraint.min_width;
+        },
+    );
 }
 
 impl<S: 'static> UiDsl for Ui<S> {
-    fn text(&mut self, constraint: Modifier, text: String) {
+    fn text(&self, modifier: Modifier, text: String) {
         if let LayoutContext::Measure { widths } = self.scope.context() {
             widths.borrow_mut().push(text_width(&text));
         } else {
-            self.render_text(text, constraint);
+            render_text(self.scope.scope(), text, modifier);
         }
     }
 
-    fn button(&mut self, constraint: Modifier, label: String) {
+    fn button(&self, modifier: Modifier, label: String) {
         if let LayoutContext::Measure { widths } = self.scope.context() {
             widths.borrow_mut().push(text_width(&label));
         } else {
-            self.render_button(label, constraint);
+            render_button(self.scope.scope(), label, modifier);
         }
     }
 }
 
-fn measured_column<S, C>(scope: UiScope<S>, constraint: Modifier, content: C)
+fn resize_min_width<S, C>(scope: UiScope<S>, constraint: Modifier, content: C)
 where
     S: 'static,
     C: Fn(Modifier, &mut dyn UiDsl) + Clone + 'static,
 {
-    let column_scope = scope.child::<ColumnNode>();
-    scope.create_node(
-        column_scope,
-        {
-            let content = content.clone();
-            move |scope| {
-                let c = constraint.clone();
-                let metrics = Rc::new(RefCell::new(Vec::new()));
-                let measure_content = content.clone();
-                let render_content = content.clone();
-                scope.subcompose(move |mut registry| {
-                    let mut constraint = c;
-                    metrics.borrow_mut().clear();
-                    let metrics_for_measure = metrics.clone();
-                    let measure_content = measure_content.clone();
-                    registry.subcompose::<ColumnSlot, _, _>(
-                        SlotId::from("measure"),
-                        LayoutContext::Measure {
-                            widths: metrics_for_measure.clone(),
-                        },
-                        move |slot| {
-                            let mut runner = Ui::new(slot);
-                            let callback = measure_content.clone();
-                            callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
-                        },
-                    );
-                    constraint.min_width = metrics.borrow().iter().copied().max().unwrap_or(0);
-                    let render_content = render_content.clone();
-                    registry.subcompose::<ColumnSlot, _, _>(
-                        SlotId::from("render"),
-                        LayoutContext::Render,
-                        move |slot| {
-                            let mut runner = Ui::new(slot);
-                            let callback = render_content.clone();
-                            callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
-                        },
-                    );
-                });
-            }
-        },
-        move || constraint,
-        |modifier, _| LayoutNode {
-            widget: "Column".to_string(),
-            width: 5,
-            min_width: modifier.min_width,
-        },
-        move |node, constraint, _| {
-            node.min_width = constraint.min_width;
-        },
-    );
+    let content = content.clone();
+    let metrics = Rc::new(RefCell::new(Vec::new()));
+    let measure_content = content.clone();
+    let render_content = content.clone();
+    scope.subcompose(move |mut registry| {
+        let mut constraint = constraint;
+        metrics.borrow_mut().clear();
+        let metrics_for_measure = metrics.clone();
+        let measure_content = measure_content.clone();
+        registry.subcompose::<ColumnSlot, _, _>(
+            SlotId::from("measure"),
+            LayoutContext::Measure {
+                widths: metrics_for_measure.clone(),
+            },
+            move |slot| {
+                let mut runner = Ui::new(slot);
+                let callback = measure_content.clone();
+                callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
+            },
+        );
+        constraint.min_width = metrics.borrow().iter().copied().max().unwrap_or(0);
+        let render_content = render_content.clone();
+        registry.subcompose::<ColumnSlot, _, _>(
+            SlotId::from("render"),
+            LayoutContext::Render,
+            move |slot| {
+                let mut runner = Ui::new(slot);
+                let callback = render_content.clone();
+                callback(constraint.clone(), &mut runner as &mut dyn UiDsl);
+            },
+        );
+    });
 }
 
 fn text_width(text: &str) -> usize {
     text.chars().count()
 }
 
+fn column<S, C>(scope: UiScope<S>, modifier: Modifier, width: usize, content: C)
+where
+    S: 'static,
+    C: Fn(UiScope<ColumnNode>) + Clone + 'static,
+{
+    let column_scope = scope.child::<ColumnNode>();
+    scope.create_node(
+        column_scope,
+        content,
+        move || (width, modifier),
+        move |(width, modifier), _| LayoutNode {
+            widget: format!("Column"),
+            width,
+            min_width: modifier.min_width,
+        },
+        move |node, (width, modifier), _| {
+            node.width = width;
+            node.min_width = modifier.min_width;
+        },
+    );
+}
+
 fn app(scope: UiScope<Root>) {
-    let constraint = Modifier::new(0);
-    measured_column(scope, constraint, |constraint, column| {
-        column.text(constraint, "Title".to_string());
-        column.button(constraint, "Tap me".to_string());
-        column.text(
-            constraint,
-            "This is a much longer line that drives the minimum width".to_string(),
-        );
-        column.text(constraint, "Footer".to_string());
+    let modifier = Modifier::new(0);
+    column(scope, modifier, 0, move |scope| {
+        resize_min_width(scope, Modifier::new(0), |modifier, column| {
+            column.text(modifier, "Title".to_string());
+            column.button(modifier, "Tap me".to_string());
+            column.text(
+                modifier,
+                "This is a much longer line that drives the minimum width".to_string(),
+            );
+            column.text(modifier, "Footer".to_string());
+        });
     });
 }
 
