@@ -93,9 +93,7 @@ where
     pub(crate) fn new(node_key: NodeKey, composer: GenerationalBox<Composer<N>>) -> Self {
         {
             let mut c = composer.write();
-            c.subcompositions
-                .entry(node_key)
-                .or_insert_with(SubcompositionEntry::default);
+            c.subcompositions.entry(node_key).or_default();
         }
         Self { composer, node_key }
     }
