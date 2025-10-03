@@ -55,9 +55,9 @@ pub(crate) struct SlotRecord {
 }
 
 impl SlotRecord {
+    #[track_caller]
     fn new(slot_id: SlotId) -> Self {
-        let mut scope_id = ScopeId::new();
-        scope_id.set_key(slot_id.as_usize());
+        let scope_id = ScopeId::new();
         Self {
             scope_id,
             key: slot_id.as_usize(),
@@ -163,16 +163,12 @@ where
         SubcomposeHandle { node_key }
     }
 
+    #[track_caller]
     fn ensure_slot(&mut self, slot_id: SlotId) -> (ScopeId, usize) {
         let mut c = self.composer.write();
-        let entry = c
-            .subcompositions
-            .entry(self.node_key)
-            .or_insert_with(SubcompositionEntry::default);
-        let slot = entry
-            .slots
-            .entry(slot_id)
-            .or_insert_with(|| SlotRecord::new(slot_id));
+        let entry = c.subcompositions.entry(self.node_key).or_default();
+        let slot_rec = SlotRecord::new(slot_id);
+        let slot = entry.slots.entry(slot_id).or_insert(slot_rec);
         (slot.scope_id, slot.key)
     }
 }
@@ -193,6 +189,7 @@ where
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn subcompose<T, C, F>(&mut self, slot_id: SlotId, ctx: C, content: F) -> SubcomposeHandle
     where
         T: 'static,
